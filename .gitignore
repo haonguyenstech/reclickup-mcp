@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+upstream.log
+.DS_Store
