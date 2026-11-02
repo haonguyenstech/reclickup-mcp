@@ -306,7 +306,9 @@ def handle(msg):
         return {"protocolVersion": msg.get("params", {}).get("protocolVersion", "2025-06-18"),
                 "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}
     if m == "tools/list":
-        UP.ready.wait(90)
+        # Don't hold the client for long: on a first run the official server waits for OAuth in the
+        # browser. Our tools are listed now; tools/list_changed follows once the official ones arrive.
+        UP.ready.wait(15)
         mine = {TOOL["name"], RELOGIN_TOOL["name"]}
         return {"tools": [t for t in UP.tools if t.get("name") not in mine] + [TOOL, RELOGIN_TOOL]}
     if m == "tools/call":
