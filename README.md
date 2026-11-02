@@ -38,10 +38,10 @@ table is scaled proportionally.
 
 ## How it works
 
-- **Proxy:** `server.py` speaks MCP over stdio. It starts `npx -y mcp-remote@0.15.1 https://mcp.clickup.com/mcp`,
+- **Proxy:** `reclickup_mcp/server.py` speaks MCP over stdio. It starts `npx -y mcp-remote@0.15.1 https://mcp.clickup.com/mcp`,
   forwards `tools/list` and `tools/call`, and adds its own tools. Each request runs in its own
   thread, so a slow Doc write does not block other calls.
-- **Browser:** `browser.py` runs a private headless Edge on port **9335** with its own profile
+- **Browser:** `reclickup_mcp/browser.py` runs a private headless Edge on port **9335** with its own profile
   (`~/.reclickup/headless-profile`). It starts on demand and stops after 10 minutes idle
   (`RECLICKUP_IDLE_STOP`).
 - **Session:** the ClickUp session (`cu_jwt` cookie) is copied once into that profile:
@@ -52,45 +52,55 @@ table is scaled proportionally.
 
 ## Install
 
-Requirements: Python ≥ 3.9, Node.js (for `npx`), Microsoft Edge.
+Nothing to clone. [`uv`](https://docs.astral.sh/uv/) fetches the server straight from this repo,
+installs its dependencies in a cached environment, and downloads Python itself if needed.
+
+Requirements: **uv**, **Node.js** (for `npx`), **Microsoft Edge**.
 
 ```bash
-git clone https://github.com/haonguyenstech/reclickup-mcp.git
-cd reclickup-mcp
-python3 -m pip install -r requirements.txt
-```
-
-Authorize the official ClickUp MCP once. A browser opens: sign in and approve. The token is
-cached in `~/.mcp-auth`.
-
-```bash
-npx -y mcp-remote@0.15.1 https://mcp.clickup.com/mcp
-# wait for "Connected", then Ctrl+C
+# macOS / Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+# Windows (PowerShell)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 ```
 
 ### Claude Desktop
 
-Add the server to `claude_desktop_config.json` and restart Claude Desktop:
+Add this to `claude_desktop_config.json` (Settings → Developer → Edit Config), then restart Claude Desktop:
 
 ```json
 {
   "mcpServers": {
     "reclickup-mcp": {
-      "command": "python3",
-      "args": ["/absolute/path/to/reclickup-mcp/server.py"],
-      "env": { "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" }
+      "command": "uvx",
+      "args": ["--from", "git+https://github.com/haonguyenstech/reclickup-mcp", "reclickup-mcp"]
     }
   }
 }
 ```
 
-`PATH` must reach `node`/`npx`. On Windows use `"command": "python"` and a Windows path.
+If Claude Desktop cannot find `uvx` or `npx`, use the full path to `uvx` (`which uvx`, e.g.
+`/Users/you/.local/bin/uvx`) and add `"env": { "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" }`
+so the path reaches `node`/`npx`.
 
 ### Claude Code
 
 ```bash
-claude mcp add reclickup-mcp -- python3 /absolute/path/to/reclickup-mcp/server.py
+claude mcp add reclickup-mcp -- uvx --from git+https://github.com/haonguyenstech/reclickup-mcp reclickup-mcp
 ```
+
+### First run
+
+- **Official ClickUp tools:** the first start opens a browser tab for the official ClickUp MCP.
+  Sign in and approve. The token is cached in `~/.mcp-auth`. Until you approve, only reclickup's
+  own tools are listed; the full list appears right after.
+- **`clickup_doc_write`:** needs a ClickUp session in reclickup's browser. On macOS it is copied
+  automatically. On Windows, call `clickup_relogin` once and sign in in the window it opens.
+
+### Updating
+
+`uvx` caches the build. To pick up a newer commit, run `uvx --refresh --from git+https://github.com/haonguyenstech/reclickup-mcp reclickup-mcp`
+once, or pin a version in the config: `git+https://github.com/haonguyenstech/reclickup-mcp@v0.3.0`.
 
 ## Environment variables
 
@@ -103,7 +113,7 @@ claude mcp add reclickup-mcp -- python3 /absolute/path/to/reclickup-mcp/server.p
 | `RECLICKUP_NPX` | `npx` on `PATH` | `npx` to run `mcp-remote` |
 | `RECLICKUP_UPSTREAM` | `https://mcp.clickup.com/mcp` | Upstream MCP URL |
 
-Upstream (`mcp-remote`) stderr is logged to `upstream.log` next to `server.py`.
+Upstream (`mcp-remote`) stderr is logged to `~/.reclickup/upstream.log`.
 
 ## Caveats
 

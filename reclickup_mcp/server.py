@@ -231,14 +231,18 @@ class Upstream:
 
     def _boot(self):
         try:
-            log = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "upstream.log"), "a")
+            logdir = os.path.join(os.path.expanduser("~"), ".reclickup"); os.makedirs(logdir, exist_ok=True)
+            log = open(os.path.join(logdir, "upstream.log"), "a")
             self.proc = subprocess.Popen(UPSTREAM_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
                                          text=True, bufsize=1)
             threading.Thread(target=self._read, daemon=True).start()
             self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                        "clientInfo": {"name": "reclickup-mcp", "version": "0.2.0"}}, timeout=300)
+                                        "clientInfo": {"name": "reclickup-mcp", "version": "0.3.0"}}, timeout=300)
             self.notify("notifications/initialized")
             self.tools = self.request("tools/list", {}, timeout=120).get("tools", [])
+            # The client may have listed tools before the upstream was ready (first run waits for OAuth
+            # in the browser): tell it to list again.
+            write_out({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
         except Exception as e:
             self.error = str(e)
         finally:
@@ -256,7 +260,7 @@ class Upstream:
                            {"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32601, "message": "not supported"}})
             elif m.get("method") == "notifications/tools/list_changed":
                 threading.Thread(target=self._refresh, daemon=True).start()
-        self.error = self.error or "official ClickUp MCP process exited (see upstream.log)"
+        self.error = self.error or "official ClickUp MCP process exited (see ~/.reclickup/upstream.log)"
 
     def _refresh(self):
         try:
@@ -300,7 +304,7 @@ def handle(msg):
     m, mid = msg.get("method"), msg.get("id")
     if m == "initialize":
         return {"protocolVersion": msg.get("params", {}).get("protocolVersion", "2025-06-18"),
-                "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.2.0"}}
+                "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.3.0"}}
     if m == "tools/list":
         UP.ready.wait(90)
         mine = {TOOL["name"], RELOGIN_TOOL["name"]}
