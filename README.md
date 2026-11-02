@@ -102,6 +102,31 @@ claude mcp add reclickup-mcp -- uvx --from git+https://github.com/haonguyenstech
 `uvx` caches the build. To pick up a newer commit, run `uvx --refresh --from git+https://github.com/haonguyenstech/reclickup-mcp reclickup-mcp`
 once, or pin a version in the config: `git+https://github.com/haonguyenstech/reclickup-mcp@v0.1.0`.
 
+## Skill: clickup-user-story
+
+[`skills/clickup-user-story/SKILL.md`](skills/clickup-user-story/SKILL.md) is a Claude skill built on
+this server. It turns a BA user-story spec into a clean draft ticket and publishes it in a fixed team
+style: 840 px tables with set column widths, green header cells and bold scenario titles.
+
+- **As a task:** created through the official tools.
+- **On a Doc page:** written with `clickup_doc_write`. Give it the Doc page link and the page is
+  filled in directly.
+- **Fix:** it also repairs existing tickets whose tables came out half width.
+
+**Download:** [clickup-user-story.zip](https://github.com/haonguyenstech/reclickup-mcp/releases/latest/download/clickup-user-story.zip)
+
+- **Claude Desktop / claude.ai:** Settings → Capabilities → Skills → **Upload skill**, then pick the zip.
+- **Claude Code:**
+
+  ```bash
+  mkdir -p ~/.claude/skills/clickup-user-story && curl -fsSL \
+    https://raw.githubusercontent.com/haonguyenstech/reclickup-mcp/master/skills/clickup-user-story/SKILL.md \
+    -o ~/.claude/skills/clickup-user-story/SKILL.md
+  ```
+
+Then ask, for example: *"make a ticket from this spec into https://app.clickup.com/…/v/dc/…/…"*.
+The skill reads the workspace from the link, or asks which list or Doc to use.
+
 ## Environment variables
 
 | Variable | Default | |
