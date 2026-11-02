@@ -100,7 +100,7 @@ claude mcp add reclickup-mcp -- uvx --from git+https://github.com/haonguyenstech
 ### Updating
 
 `uvx` caches the build. To pick up a newer commit, run `uvx --refresh --from git+https://github.com/haonguyenstech/reclickup-mcp reclickup-mcp`
-once, or pin a version in the config: `git+https://github.com/haonguyenstech/reclickup-mcp@v0.3.0`.
+once, or pin a version in the config: `git+https://github.com/haonguyenstech/reclickup-mcp@v0.1.0`.
 
 ## Environment variables
 

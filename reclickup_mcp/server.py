@@ -237,7 +237,7 @@ class Upstream:
                                          text=True, bufsize=1)
             threading.Thread(target=self._read, daemon=True).start()
             self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                        "clientInfo": {"name": "reclickup-mcp", "version": "0.3.0"}}, timeout=300)
+                                        "clientInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}, timeout=300)
             self.notify("notifications/initialized")
             self.tools = self.request("tools/list", {}, timeout=120).get("tools", [])
             # The client may have listed tools before the upstream was ready (first run waits for OAuth
@@ -304,7 +304,7 @@ def handle(msg):
     m, mid = msg.get("method"), msg.get("id")
     if m == "initialize":
         return {"protocolVersion": msg.get("params", {}).get("protocolVersion", "2025-06-18"),
-                "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.3.0"}}
+                "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}
     if m == "tools/list":
         UP.ready.wait(90)
         mine = {TOOL["name"], RELOGIN_TOOL["name"]}

@@ -1,6 +1,6 @@
 [project]
 name = "reclickup-mcp"
-version = "0.3.0"
+version = "0.1.0"
 description = "ClickUp MCP proxy (all official tools) + write ClickUp Docs with real table formatting: column widths, header colours, bold"
 readme = "README.md"
 license = "MIT"
