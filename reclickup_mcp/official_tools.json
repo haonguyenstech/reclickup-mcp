@@ -1,0 +1,8056 @@
+[
+{
+"name": "clickup_attach_task_file",
+"description": "Attach file to task. Requires task_id. File sources: 1) base64 + filename (small files under ~200KB only), 2) URL (http/https). For files on the local machine, use request_attachment_upload instead.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": true,
+"readOnlyHint": false,
+"title": "Attach Task File"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"file_name": {
+"type": "string",
+"description": "Name of the file to be attached (include the extension). Required when using file_data."
+},
+"file_data": {
+"type": "string",
+"description": "Base64-encoded content of the file (without the data URL prefix)."
+},
+"file_url": {
+"type": "string",
+"description": "URL to download the file from (must start with http:// or https://)."
+},
+"auth_header": {
+"type": "string",
+"description": "Authorization header to use when downloading from the web URL."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"attachment_id": {
+"type": "string"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') when task_id was given as one, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"url": {
+"description": "Download URL for the attached file.",
+"type": "string"
+},
+"title": {
+"type": "string"
+},
+"extension": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"attachment_id",
+"task_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_request_attachment_upload",
+"description": "Get short-lived, structured upload details (upload URL, ticket, HTTP method, and multipart field name) to attach a LOCAL file (any size) to a task, or to a chat message or thread reply; follow the returned instructions to upload it with a native HTTP client. Pass exactly one of task_id, channel_id (new message or post) or parent_message_id (thread reply). For chat, upload first, then send the message with clickup_send_chat_message referencing the file as shown in reference_hint. For small base64 payloads or web URLs on a task, use attach_task_file instead.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": true,
+"readOnlyHint": false,
+"title": "Request Attachment Upload"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task to attach the file to (supports custom IDs like 'DEV-1234'). Provide exactly one of task_id, channel_id or parent_message_id."
+},
+"channel_id": {
+"type": "string",
+"description": "Chat channel (or DM) whose next message or post will reference the file. Provide exactly one of task_id, channel_id or parent_message_id."
+},
+"parent_message_id": {
+"type": "string",
+"description": "Chat message whose thread the next reply referencing the file goes in. Provide exactly one of task_id, channel_id or parent_message_id."
+},
+"file_name": {
+"type": "string",
+"description": "Optional file name override (include the extension). Defaults to the local file's own name."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"description": "Resolved task ID the upload is bound to. Present for task uploads.",
+"type": "string"
+},
+"destination": {
+"type": "object",
+"properties": {
+"kind": {
+"type": "string",
+"enum": [
+"task",
+"channel",
+"thread"
+]
+},
+"id": {
+"type": "string",
+"description": "Resolved task ID, channel ID, or parent message ID."
+}
+},
+"required": [
+"kind",
+"id"
+],
+"additionalProperties": false,
+"description": "Where the uploaded file is bound."
+},
+"reference_hint": {
+"description": "Present for chat destinations: the Markdown to put in clickup_send_chat_message content, with <title> and <attachment_id> replaced by the title and id from the upload response.",
+"type": "string"
+},
+"upload_url": {
+"type": "string",
+"description": "URL the file must be POSTed to."
+},
+"upload_ticket": {
+"type": "string",
+"description": "Upload ticket. Send it in the X-Upload-Ticket request header."
+},
+"http_method": {
+"type": "string",
+"description": "HTTP method for the upload request (always POST)."
+},
+"multipart_field": {
+"type": "string",
+"description": "multipart/form-data field name for the file (always \"attachment\")."
+},
+"file_name": {
+"description": "Filename to give the uploaded attachment. When present, set it as the filename of the multipart \"attachment\" part; otherwise the local file's own name is used.",
+"type": "string"
+},
+"expires_at": {
+"type": "string",
+"description": "ISO 8601 expiry of the upload ticket."
+},
+"instructions": {
+"type": "string",
+"description": "How to complete the upload."
+}
+},
+"required": [
+"success",
+"destination",
+"upload_url",
+"upload_ticket",
+"http_method",
+"multipart_field",
+"expires_at",
+"instructions"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_download_task_attachment",
+"description": "Download a ClickUp task attachment (get attachment IDs from clickup_get_task with include: [\"attachments\"]). Returns a short-lived download URL plus attachment metadata. IMPORTANT: the URL is short-lived and, on workspaces with private attachments enabled, single-use \u2014 it expires within ~5 minutes. Fetch it immediately and exactly once; do not preview, HEAD-request, retry, or store it. If a download fails or the URL expired, call this tool again for a fresh URL.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Download Task Attachment"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"attachment_id": {
+"type": "string",
+"description": "Attachment ID. List a task's attachments with clickup_get_task using include: [\"attachments\"]."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"attachment_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string",
+"description": "Resolved task ID."
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') if the workspace has custom IDs enabled, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"attachment_id": {
+"type": "string"
+},
+"title": {
+"type": "string"
+},
+"extension": {
+"description": "File extension. Absent when the attachment has none (e.g. extension-less files).",
+"type": "string"
+},
+"mimetype": {
+"description": "MIME type. Absent when the upstream API does not report one (e.g. legacy attachments).",
+"type": "string"
+},
+"size": {
+"description": "File size in bytes. Absent when the upstream API does not report one (e.g. legacy or link attachments).",
+"type": "number"
+},
+"url": {
+"type": "string",
+"description": "Download URL. Short-lived, and single-use on workspaces with private attachments enabled (~5 minute expiry). Fetch it immediately and exactly once; do not preview, HEAD-request, retry, or store it. If the download fails or the URL expired, call clickup_download_task_attachment again for a fresh URL."
+},
+"url_notice": {
+"type": "string",
+"description": "Handling instructions for the download URL."
+}
+},
+"required": [
+"success",
+"task_id",
+"attachment_id",
+"title",
+"url",
+"url_notice"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_chat_channels",
+"description": "List chat channels in the workspace with pagination support.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Chat Channels"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"cursor": {
+"description": "Cursor for pagination. Use the next_cursor value from the previous response to fetch the next page of results.",
+"type": "string"
+},
+"limit": {
+"default": 100,
+"description": "Maximum number of channels to return (1-100).",
+"type": "number",
+"minimum": 1,
+"maximum": 100
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"total_count": {
+"type": "number"
+},
+"has_more": {
+"type": "boolean"
+},
+"next_cursor": {
+"type": [
+"string",
+"null"
+]
+},
+"channels": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"description": {
+"type": [
+"string",
+"null"
+]
+},
+"visibility": {
+"type": "string",
+"enum": [
+"PUBLIC",
+"PRIVATE"
+]
+},
+"creator": {
+"type": "string"
+},
+"created_at": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"type",
+"visibility",
+"creator",
+"created_at"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"total_count",
+"has_more",
+"next_cursor",
+"channels"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_send_chat_message",
+"description": "Send a message or threaded reply to a chat channel, or a direct message to people. Provide parent_message_id for a threaded reply, or user_ids instead of channel_id to message people directly: it opens the direct message with them, or reuses the existing one (more than one id makes a group DM). Supports markdown and post types.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Send Chat Message"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"channel_id": {
+"description": "ID of the chat channel to send the message to. Required unless user_ids or parent_message_id is set. Ignored when parent_message_id is set: a reply's channel comes from its parent message.",
+"type": "string"
+},
+"user_ids": {
+"description": "Numeric user IDs (1-15) of the people to message directly, instead of channel_id. Get them from clickup_find_member_by_name or clickup_resolve_assignees. Opens the 1:1 or group direct message with exactly these people, or reuses the existing one. The response's channel_id is that direct message: pass it as channel_id for follow-up messages. Cannot be combined with channel_id or parent_message_id.",
+"minItems": 1,
+"maxItems": 15,
+"type": "array",
+"items": {
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"content": {
+"type": "string",
+"description": "Message content to send (supports markdown). To attach a file, first call clickup_request_attachment_upload for this channel or thread and upload it; then reference it inline as [title](#attachment#<attachment_id>), or ![title](#attachment#<attachment_id>) to show an image. An id already uploaded elsewhere in this workspace can be referenced too, without a new upload; an upload that is never referenced is not shown anywhere. External image or file URLs are not supported: upload the file first and reference it as above."
+},
+"parent_message_id": {
+"description": "ID of the parent message to reply to. When provided, the message is sent as a threaded reply instead of a top-level channel message. Use clickup_get_chat_channel_messages to find the message ID.",
+"type": "string"
+},
+"type": {
+"default": "message",
+"description": "Type of message to send.",
+"type": "string",
+"enum": [
+"message",
+"post"
+]
+},
+"content_format": {
+"default": "text/md",
+"description": "Format of the message content.",
+"type": "string",
+"enum": [
+"text/md",
+"text/plain"
+]
+},
+"assignee": {
+"description": "User ID to assign the message to. Use clickup_resolve_assignees to convert email, username, or \"me\" to user ID if needed.",
+"type": "string"
+},
+"group_assignee": {
+"description": "Group ID to assign the message to.",
+"type": "string"
+},
+"followers": {
+"description": "Array of user IDs to add as followers of the message. Use clickup_resolve_assignees to convert emails, usernames, or \"me\" to user IDs if needed.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"post_title": {
+"description": "Title for the post (required if type is 'post').",
+"type": "string"
+},
+"post_type": {
+"description": "Kind of post (required if type is 'post'). Resolved to the workspace's post subtype.",
+"type": "string",
+"enum": [
+"Update",
+"Announcement",
+"Idea",
+"Discussion"
+]
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"content"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message_id": {
+"type": "string"
+},
+"channel_id": {
+"type": "string"
+},
+"post_type": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"message_id",
+"channel_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_chat_channel_messages",
+"description": "Get messages for a chat channel. Messages with has_replies=true have threads fetchable via clickup_get_chat_message_replies. Supports pagination. Channel URLs look like /<ws>/v/cn/<channel_id> or /<ws>/chat/r/<channel_id>. Attachments come back as Markdown links. On workspaces with private attachments the links are short-lived (about 5 minutes) and single-use: download each once, immediately, and re-read the message for a fresh link. Set include_reactions to true to see who reacted (limit must be 25 or fewer).",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Chat Channel Messages"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"channel_id": {
+"type": "string",
+"description": "ID of the chat channel to get messages from."
+},
+"cursor": {
+"description": "Cursor for pagination. Use the next_cursor value from the previous response to fetch the next page of results.",
+"type": "string"
+},
+"limit": {
+"description": "Maximum number of messages to return (1-100). Defaults to 100, or 25 when include_reactions is true; values above 25 are rejected together with include_reactions.",
+"type": "number",
+"minimum": 1,
+"maximum": 100
+},
+"include_reactions": {
+"description": "When true, attach reactions (count and reacted_by_me per emoji shortcode) to each returned item. Costs one extra upstream call per item, so limit must be 25 or fewer. Default false.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"channel_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"total_count": {
+"type": "number"
+},
+"has_more": {
+"type": "boolean"
+},
+"next_cursor": {
+"type": [
+"string",
+"null"
+]
+},
+"messages": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"content": {
+"type": "string",
+"description": "Message content in Markdown: mentions appear as [@Name](#user_mention#<user_id>), files as [name](url), images as ![name](url)."
+},
+"user_id": {
+"type": "string"
+},
+"date": {
+"type": "number"
+},
+"type": {
+"type": "string",
+"enum": [
+"message",
+"post"
+]
+},
+"post_title": {
+"type": [
+"string",
+"null"
+]
+},
+"post_type": {
+"type": "string"
+},
+"parent_message": {
+"type": [
+"string",
+"null"
+]
+},
+"has_replies": {
+"type": "boolean"
+},
+"reactions": {
+"description": "Reactions keyed by emoji shortcode (e.g. \"+1\", \"heart\"). Present only when include_reactions is true and the message has reactions.",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {
+"type": "object",
+"properties": {
+"count": {
+"type": "number",
+"description": "Users who added this reaction; a lower bound when reactions_truncated is true."
+},
+"reacted_by_me": {
+"type": "boolean",
+"description": "True when the authenticated user added this reaction. Can be a false negative when reactions_truncated is true."
+}
+},
+"required": [
+"count",
+"reacted_by_me"
+],
+"additionalProperties": false
+}
+},
+"reactions_truncated": {
+"description": "Present when the message has more than 100 reaction entries; counts are then a lower bound.",
+"type": "boolean",
+"const": true
+}
+},
+"required": [
+"id",
+"content",
+"user_id",
+"date",
+"type",
+"has_replies"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"total_count",
+"has_more",
+"next_cursor",
+"messages"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_chat_message_replies",
+"description": "Get threaded replies for a chat message by message_id. Supports pagination. Chat thread URLs (/<ws>/v/cn/<channel_id>/t/<id> or /<ws>/chat/r/<channel_id>/t/<id>) end in a chat message id \u2014 pass it here, not to clickup_get_task. That id is usually the thread root but can be a reply inside the thread; if no replies come back, find the thread root via clickup_get_chat_channel_messages on the channel. Attachments come back as Markdown links. On workspaces with private attachments the links are short-lived (about 5 minutes) and single-use: download each once, immediately, and re-read the message for a fresh link. Set include_reactions to true to see who reacted (limit must be 25 or fewer).",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Chat Message Replies"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"message_id": {
+"type": "string",
+"description": "ID of the chat message to get replies from."
+},
+"cursor": {
+"description": "Cursor for pagination. Use the next_cursor value from the previous response to fetch the next page of results.",
+"type": "string"
+},
+"limit": {
+"description": "Maximum number of replies to return (1-100). Defaults to 100, or 25 when include_reactions is true; values above 25 are rejected together with include_reactions.",
+"type": "number",
+"minimum": 1,
+"maximum": 100
+},
+"include_reactions": {
+"description": "When true, attach reactions (count and reacted_by_me per emoji shortcode) to each returned item. Costs one extra upstream call per item, so limit must be 25 or fewer. Default false.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"message_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"total_count": {
+"type": "number"
+},
+"has_more": {
+"type": "boolean"
+},
+"next_cursor": {
+"type": [
+"string",
+"null"
+]
+},
+"replies": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"content": {
+"type": "string",
+"description": "Reply content in Markdown: mentions appear as [@Name](#user_mention#<user_id>), files as [name](url), images as ![name](url)."
+},
+"user_id": {
+"type": "string"
+},
+"date": {
+"type": "number"
+},
+"type": {
+"type": "string",
+"enum": [
+"message",
+"post"
+]
+},
+"post_title": {
+"type": [
+"string",
+"null"
+]
+},
+"post_type": {
+"type": "string"
+},
+"reactions": {
+"description": "Reactions keyed by emoji shortcode (e.g. \"+1\", \"heart\"). Present only when include_reactions is true and the message has reactions.",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {
+"type": "object",
+"properties": {
+"count": {
+"type": "number",
+"description": "Users who added this reaction; a lower bound when reactions_truncated is true."
+},
+"reacted_by_me": {
+"type": "boolean",
+"description": "True when the authenticated user added this reaction. Can be a false negative when reactions_truncated is true."
+}
+},
+"required": [
+"count",
+"reacted_by_me"
+],
+"additionalProperties": false
+}
+},
+"reactions_truncated": {
+"description": "Present when the message has more than 100 reaction entries; counts are then a lower bound.",
+"type": "boolean",
+"const": true
+}
+},
+"required": [
+"id",
+"content",
+"user_id",
+"date",
+"type"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"total_count",
+"has_more",
+"next_cursor",
+"replies"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_react_to_chat_message",
+"description": "Add or remove the authenticated user's emoji reaction on a chat message or reply. Reactions are primary lowercase emoji shortcodes such as \"+1\", \"heart\", \"eyes\", \"white_check_mark\", \"tada\", \"rocket\" (wrapping colons are optional); aliases like \"thumbsup\" or \"thumbs_up\" are rejected, and custom workspace emoji are addressed by name. Adding a reaction that is already present, or removing one that is absent, fails with a \"nothing changed\" error. Only the caller's own reactions are affected.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "React To Chat Message"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"message_id": {
+"type": "string",
+"description": "ID of the chat message or reply to react to. Find it via clickup_get_chat_channel_messages or clickup_get_chat_message_replies."
+},
+"action": {
+"type": "string",
+"enum": [
+"add",
+"remove"
+],
+"description": "'add' puts the authenticated user's reaction on the message; 'remove' takes it off."
+},
+"reaction": {
+"type": "string",
+"description": "Primary emoji shortcode, lowercase, e.g. \"+1\", \"heart\", \"eyes\". Aliases such as \"thumbsup\" are not accepted."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"message_id",
+"action",
+"reaction"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"action": {
+"type": "string",
+"enum": [
+"add",
+"remove"
+]
+},
+"message_id": {
+"type": "string"
+},
+"reaction": {
+"type": "string",
+"description": "The shortcode sent upstream, after trimming."
+}
+},
+"required": [
+"success",
+"action",
+"message_id",
+"reaction"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_delete_chat_message",
+"description": "Delete a chat message, thread reply or post by message_id. This cannot be undone. Deleting a top-level message also deletes every reply in its thread; to remove only one reply, pass that reply's id. Confirm with the user before deleting a message that has replies or that someone else wrote. Find ids via clickup_get_chat_channel_messages or clickup_get_chat_message_replies. For task comments use clickup_delete_comment.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Delete Chat Message"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"message_id": {
+"type": "string",
+"description": "ID of the chat message, reply or post to delete. Find it via clickup_get_chat_channel_messages or clickup_get_chat_message_replies."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"message_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"message_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_chat_message",
+"description": "Edit a chat message or reply you posted: its text, and for a post its title or type; also resolve it or change its assignee. content replaces the whole message. Read it first with clickup_get_chat_channel_messages or clickup_get_chat_message_replies (content comes back as Markdown), then send back the full Markdown with your change, keeping every file link, image and video link exactly as you read it. A file you leave out is removed and deleted. Only the author can change content. Omit content to change only the title, type, resolved status or assignee.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Chat Message"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"message_id": {
+"type": "string",
+"description": "ID of the message or reply to edit. Use clickup_get_chat_channel_messages or clickup_get_chat_message_replies to find it."
+},
+"content": {
+"description": "The full new message in Markdown. Keep the file links and images from the read as they are. To add a file, upload it with clickup_request_attachment_upload and reference it as [title](#attachment#<attachment_id>) or ![title](#attachment#<attachment_id>).",
+"type": "string",
+"minLength": 1
+},
+"post_title": {
+"description": "New title. Posts only.",
+"type": "string",
+"maxLength": 255
+},
+"post_type": {
+"description": "New kind of post. Posts only; a message can't become a post.",
+"type": "string",
+"enum": [
+"Update",
+"Announcement",
+"Idea",
+"Discussion"
+]
+},
+"resolved": {
+"description": "Mark the message resolved (true) or unresolved (false).",
+"type": "boolean"
+},
+"assignee": {
+"description": "User ID to assign, or \"unassigned\" to clear. Use clickup_resolve_assignees to convert email, username, or \"me\".",
+"type": "string"
+},
+"group_assignee": {
+"description": "Group ID to assign the message to.",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"message_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message_id": {
+"type": "string"
+},
+"warnings": {
+"description": "Content the API dropped before saving, one entry per invalid or foreign reference. The message was still updated without it; fix the named reference and edit again if it mattered.",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"code": {
+"type": "string"
+},
+"message": {
+"type": "string"
+},
+"reference": {
+"description": "The reference this warning is about, when it is about one.",
+"type": "object",
+"properties": {
+"type": {
+"type": "string",
+"description": "The kind of reference that was dropped (task, doc, user, ...)."
+},
+"value": {
+"description": "The offending value from the request, truncated.",
+"type": "string"
+}
+},
+"required": [
+"type"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"code",
+"message"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"success",
+"message_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_task_comments",
+"description": "Get task comments with reply_count per comment. Use clickup_get_threaded_comments for replies when reply_count > 0. Supports pagination via start/start_id.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Task Comments"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"start": {
+"type": "number",
+"description": "Timestamp (in milliseconds) to start retrieving comments from. Used for pagination."
+},
+"start_id": {
+"type": "string",
+"description": "Comment ID to start from. Used together with start for pagination."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"comments": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"comment_text": {
+"type": "string",
+"description": "Plain-text comment content (rich formatting flattened; table embeds not representable)"
+},
+"user": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false,
+"description": "Comment author"
+},
+"date": {
+"type": "string",
+"description": "Creation time as Unix epoch milliseconds string"
+},
+"resolved": {
+"type": "boolean"
+},
+"assignee": {
+"description": "User the comment is assigned to; null when unassigned",
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"assigned_by": {
+"description": "User who assigned the comment; null when not assigned by anyone",
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"reactions": {
+"description": "Reactions grouped by reaction identifier \u2014 a shortcode like \"thumbs_up\" or a Unicode codepoint like \"1F44D\"; omitted when there are none",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {
+"type": "object",
+"properties": {
+"count": {
+"type": "number"
+},
+"users": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+}
+},
+"reacted_by_me": {
+"type": "boolean",
+"description": "True when the authenticated user added this reaction"
+}
+},
+"required": [
+"count",
+"users",
+"reacted_by_me"
+],
+"additionalProperties": false
+}
+},
+"reply_count": {
+"type": "number",
+"description": "Number of threaded replies; fetch with clickup_get_threaded_comments"
+}
+},
+"required": [
+"id",
+"comment_text",
+"user",
+"date",
+"reply_count"
+],
+"additionalProperties": false
+},
+"description": "Array of task comments"
+},
+"count": {
+"type": "number",
+"description": "Total comment count"
+}
+},
+"required": [
+"comments",
+"count"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_comment",
+"description": "Create a comment or threaded reply on a task, list, or view. Supports Markdown (headings, bold, code blocks, tables). Use entity_type + entity_id for the target entity. Provide reply_to_id for a threaded reply.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Comment"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"entity_type": {
+"default": "task",
+"description": "Entity type to comment on. Use with entity_id.",
+"type": "string",
+"enum": [
+"task",
+"list",
+"view"
+]
+},
+"entity_id": {
+"type": "string",
+"description": "ID of the entity to comment on."
+},
+"comment_text": {
+"type": "string",
+"maxLength": 40000,
+"description": "Comment content. Supports Markdown formatting. To @mention a user, write a markdown link [@Name](#user_mention#user_id) inline, e.g. 'Hey [@Jane](#user_mention#81344), please review' \u2014 user_id MUST be a numeric ClickUp user id from clickup_resolve_assignees (the display name is resolved server-side). External image URLs are not shown as images; send the URL as a plain link."
+},
+"reply_to_id": {
+"type": "string",
+"description": "ID of a parent comment to reply to. When provided, the comment is posted as a threaded reply instead of a top-level comment."
+},
+"notify_all": {
+"type": "boolean",
+"description": "Whether to notify all assignees. Default is false."
+},
+"assignee": {
+"type": "number",
+"description": "User ID to assign the comment to. Use clickup_resolve_assignees to convert email, username, or \"me\" to user ID if needed."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"comment_text"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"comment_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"comment_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_task_comment",
+"description": "[DEPRECATED \u2192 clickup_create_comment] Legacy name for creating a task comment, kept for clients with stale tool listings. Prefer the replacement tool; it takes entity_id instead of task_id.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Task Comment (Deprecated)"
+},
+"_meta": {
+"clickup/deprecated": true,
+"clickup/deprecated_since": "1.0.87",
+"clickup/replacement": "clickup_create_comment",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"comment_text": {
+"type": "string",
+"description": "Comment content. Supports Markdown formatting. External image URLs are not shown as images; send the URL as a plain link."
+},
+"notify_all": {
+"type": "boolean",
+"description": "Whether to notify all assignees. Default is false."
+},
+"assignee": {
+"type": "number",
+"description": "User ID to assign the comment to. Use clickup_resolve_assignees to convert email, username, or \"me\" to user ID if needed."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"comment_text"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"comment_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"comment_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_comment",
+"description": "Edit an existing comment in place by comment_id. Replaces the comment text (supports Markdown), and can mark it resolved or reassign it. Use clickup_get_task_comments or clickup_get_threaded_comments to find the comment ID.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Comment"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"comment_id": {
+"type": "string",
+"minLength": 1,
+"description": "ID of the comment to update. Use clickup_get_task_comments or clickup_get_threaded_comments to find the comment ID."
+},
+"comment_text": {
+"type": "string",
+"maxLength": 40000,
+"description": "New comment content that replaces the existing text. Supports Markdown formatting. To @mention a user, write [@Name](#user_mention#user_id) inline \u2014 user_id MUST be a numeric ClickUp user id from clickup_resolve_assignees. External image URLs are not shown as images; send the URL as a plain link."
+},
+"resolved": {
+"type": "boolean",
+"description": "Mark the comment as resolved (true) or unresolved (false)."
+},
+"assignee": {
+"type": "number",
+"description": "User ID to assign the comment to. Use clickup_resolve_assignees to convert email, username, or \"me\" to user ID if needed."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"comment_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"comment_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"comment_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_delete_comment",
+"description": "Delete a comment by comment_id. This cannot be undone. Use clickup_get_task_comments or clickup_get_threaded_comments to find the comment ID.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Delete Comment"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"comment_id": {
+"type": "string",
+"minLength": 1,
+"description": "ID of the comment to delete. Use clickup_get_task_comments or clickup_get_threaded_comments to find the comment ID."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"comment_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"comment_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"comment_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_threaded_comments",
+"description": "Get threaded replies for a comment by comment_id. Use clickup_get_task_comments first to find comments with reply_count > 0.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Threaded Comments"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"comment_id": {
+"type": "string",
+"description": "ID of the parent comment to get threaded replies for."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"comment_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"comments": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"comment_text": {
+"type": "string",
+"description": "Plain-text comment content (rich formatting flattened; table embeds not representable)"
+},
+"user": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false,
+"description": "Comment author"
+},
+"date": {
+"type": "string",
+"description": "Creation time as Unix epoch milliseconds string"
+},
+"resolved": {
+"type": "boolean"
+},
+"assignee": {
+"description": "User the comment is assigned to; null when unassigned",
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"assigned_by": {
+"description": "User who assigned the comment; null when not assigned by anyone",
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"reactions": {
+"description": "Reactions grouped by reaction identifier \u2014 a shortcode like \"thumbs_up\" or a Unicode codepoint like \"1F44D\"; omitted when there are none",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {
+"type": "object",
+"properties": {
+"count": {
+"type": "number"
+},
+"users": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+}
+},
+"reacted_by_me": {
+"type": "boolean",
+"description": "True when the authenticated user added this reaction"
+}
+},
+"required": [
+"count",
+"users",
+"reacted_by_me"
+],
+"additionalProperties": false
+}
+},
+"reply_count": {
+"type": "number",
+"description": "Number of threaded replies; fetch with clickup_get_threaded_comments"
+}
+},
+"required": [
+"id",
+"comment_text",
+"user",
+"date"
+],
+"additionalProperties": false
+}
+},
+"count": {
+"type": "number"
+}
+},
+"required": [
+"comments",
+"count"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_custom_fields",
+"description": "Get custom field definitions at any hierarchy level (list, folder, space, or workspace). Returns field IDs, types, and options for dropdowns/labels. Use this to discover available custom fields before setting values on tasks. Multiple scopes can be queried in a single call.",
+"annotations": {
+"title": "Get Custom Fields",
+"readOnlyHint": true,
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"list_id": {
+"description": "List ID. Returns custom fields defined on this list.",
+"type": "string",
+"minLength": 1
+},
+"folder_id": {
+"description": "Folder ID. Returns custom fields defined on this folder.",
+"type": "string",
+"minLength": 1
+},
+"space_id": {
+"description": "Space ID. Returns custom fields defined on this space.",
+"type": "string",
+"minLength": 1
+},
+"include_workspace": {
+"description": "If true, returns workspace-level custom fields.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"list_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"type_config": {
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"required": {
+"type": [
+"boolean",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"type",
+"type_config",
+"required"
+],
+"additionalProperties": false
+}
+},
+"folder_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"type_config": {
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"required": {
+"type": [
+"boolean",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"type",
+"type_config",
+"required"
+],
+"additionalProperties": false
+}
+},
+"space_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"type_config": {
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"required": {
+"type": [
+"boolean",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"type",
+"type_config",
+"required"
+],
+"additionalProperties": false
+}
+},
+"workspace_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"type_config": {
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"required": {
+"type": [
+"boolean",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"type",
+"type_config",
+"required"
+],
+"additionalProperties": false
+}
+},
+"errors": {
+"description": "Error messages for scopes that failed to fetch. Present only when some (but not all) scopes failed.",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_document",
+"description": "Create a document in a ClickUp space, folder, or list. Requires name, parent info, visibility and create_page flag.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Document"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name": {
+"type": "string",
+"description": "Name and Title of the document"
+},
+"parent": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "ID of the parent container (space, folder, or list)"
+},
+"type": {
+"type": "string",
+"enum": [
+"4",
+"5",
+"6",
+"7",
+"12"
+],
+"description": "Type of the parent container ('4'=space, '5'=folder, '6'=list, '7'=everything, '12'=workspace)"
+}
+},
+"required": [
+"id",
+"type"
+],
+"description": "Parent container information"
+},
+"visibility": {
+"type": "string",
+"enum": [
+"PUBLIC",
+"PRIVATE",
+"PERSONAL",
+"HIDDEN"
+],
+"description": "Document visibility setting"
+},
+"create_page": {
+"type": "boolean",
+"description": "Whether to create an initial blank page"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name",
+"parent",
+"visibility",
+"create_page"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"document_id": {
+"type": "string"
+},
+"document_url": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"document_id",
+"document_url"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_list_document_pages",
+"description": "List page names and structure of a document (no content). Use get_document_pages to fetch full page content by page ID.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "List Document Pages"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"document_id": {
+"type": "string",
+"description": "ID of the document (e.g. 'ad-909705'). In ClickUp doc URLs the path is either /{workspace_id}/docs/{document_id} or /{workspace_id}/v/dc/{document_id}. The document_id is always the first ID after /docs/ or /v/dc/."
+},
+"max_page_depth": {
+"description": "Maximum depth of pages to retrieve (-1 for unlimited)",
+"type": "number"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"document_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"pages": {
+"type": "array",
+"items": {},
+"description": "Document page listing"
+}
+},
+"required": [
+"pages"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_document_pages",
+"description": "Get the full content of specific pages by page ID. Use list_document_pages first to discover available page IDs.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Document Pages"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"document_id": {
+"type": "string",
+"description": "ID of the document (e.g. 'ad-909705'). In ClickUp doc URLs the path is either /{workspace_id}/docs/{document_id}/{page_id} or /{workspace_id}/v/dc/{document_id}/{page_id}. The document_id is always the first ID after /docs/ or /v/dc/."
+},
+"page_ids": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of page IDs to retrieve (e.g. ['ad-2675877']). In ClickUp doc URLs, the page_id is the second ID after /docs/ or /v/dc/. If the URL contains only one ID (e.g. /{workspace_id}/docs/{document_id}), that is the document_id \u2014 use list_document_pages to discover page IDs."
+},
+"content_format": {
+"default": "text/plain",
+"description": "Response content format.",
+"type": "string",
+"enum": [
+"text/plain",
+"text/md"
+]
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"document_id",
+"page_ids"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"pages": {
+"type": "array",
+"items": {},
+"description": "Document page contents"
+}
+},
+"required": [
+"pages"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_document_page",
+"description": "Create a new page in a ClickUp document.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Document Page"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"document_id": {
+"type": "string",
+"description": "ID of the document to create the page in (e.g. 'ad-909705'). In ClickUp doc URLs, the document_id is always the first ID after /docs/ or /v/dc/."
+},
+"content": {
+"type": "string",
+"description": "Content of the page"
+},
+"name": {
+"type": "string",
+"description": "Name and title of the page"
+},
+"sub_title": {
+"description": "Subtitle of the page",
+"type": "string"
+},
+"parent_page_id": {
+"description": "ID of the parent page (if this is a sub-page)",
+"type": "string"
+},
+"content_format": {
+"default": "text/md",
+"description": "The format of the page content",
+"type": "string",
+"enum": [
+"text/md",
+"text/plain"
+]
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"document_id",
+"content",
+"name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"page_id": {
+"type": "string"
+},
+"doc_id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"page_id",
+"doc_id",
+"name"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_document_page",
+"description": "Update a page in a ClickUp document. Use content_edit_mode to control how content is applied: append/prepend merge with the existing page server-side and preserve it exactly \u2014 no need to read the page first. The default is 'replace', which overwrites the whole page. If appended content should start on its own line, include a leading newline; if prepended content should end on its own line, include a trailing newline.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Document Page"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"document_id": {
+"type": "string",
+"description": "ID of the document containing the page (e.g. 'ad-909705'). In ClickUp doc URLs, the document_id is always the first ID after /docs/ or /v/dc/."
+},
+"page_id": {
+"type": "string",
+"description": "ID of the page to update (e.g. 'ad-2675877'). In ClickUp doc URLs, this is the second ID after /docs/ or /v/dc/."
+},
+"name": {
+"description": "New name for the page",
+"type": "string"
+},
+"sub_title": {
+"description": "New subtitle for the page",
+"type": "string"
+},
+"content": {
+"description": "New content for the page (must be non-empty; clearing a page is not supported). By default this REPLACES the entire existing page content \u2014 set content_edit_mode to 'append' or 'prepend' to add to the page instead of overwriting it.",
+"type": "string",
+"minLength": 1
+},
+"content_edit_mode": {
+"default": "replace",
+"description": "How to apply `content`: 'append' adds it at the end of the existing page, 'prepend' inserts it before the existing content, 'replace' (default) OVERWRITES the entire page \u2014 existing content is lost. Ignored when `content` is not provided.",
+"type": "string",
+"enum": [
+"replace",
+"append",
+"prepend"
+]
+},
+"content_format": {
+"default": "text/md",
+"description": "The format of the page content",
+"type": "string",
+"enum": [
+"text/md",
+"text/plain"
+]
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"document_id",
+"page_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"page_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"page_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_list_document_page_attachments",
+"description": "List metadata for files attached to a ClickUp doc page (images and files embedded in the page content).",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "List Document Page Attachments"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"page_id": {
+"type": "string",
+"description": "ID of the doc page (e.g. 'ad-2675877'). In ClickUp doc URLs, the page_id is the second ID after /docs/ or /v/dc/. Use list_document_pages to discover page IDs."
+},
+"cursor": {
+"description": "Cursor from a previous response to fetch the next page of results.",
+"type": "string"
+},
+"limit": {
+"description": "Maximum number of attachments to return (1-100, default 50).",
+"type": "integer",
+"minimum": 1,
+"maximum": 100
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"page_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"attachments": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "The ID of the attachment."
+},
+"title": {
+"type": "string",
+"description": "The attachment file name."
+},
+"extension": {
+"description": "File extension. Absent when the attachment has none.",
+"type": "string"
+},
+"mime_type": {
+"description": "MIME type. Absent when the upstream API does not report one.",
+"type": "string"
+},
+"size": {
+"description": "File size in bytes. Absent when the upstream API does not report one.",
+"type": "number"
+}
+},
+"required": [
+"id",
+"title"
+],
+"additionalProperties": false
+},
+"description": "Attachments embedded on the page (metadata only, no download URLs)."
+},
+"next_cursor": {
+"description": "Cursor for fetching the next page of results. Absent when there are no more results.",
+"type": "string"
+}
+},
+"required": [
+"attachments"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_download_document_page_attachment",
+"description": "Download a ClickUp doc page attachment (get attachment IDs from clickup_list_document_page_attachments). Returns a short-lived download URL plus attachment metadata. IMPORTANT: the URL is short-lived and, on workspaces with private attachments enabled, single-use \u2014 it expires within ~5 minutes. Fetch it immediately and exactly once; do not preview, HEAD-request, retry, or store it. If a download fails or the URL expired, call this tool again for a fresh URL.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Download Document Page Attachment"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"page_id": {
+"type": "string",
+"description": "ID of the doc page (e.g. 'ad-2675877'). In ClickUp doc URLs, the page_id is the second ID after /docs/ or /v/dc/. Use list_document_pages to discover page IDs."
+},
+"attachment_id": {
+"type": "string",
+"description": "Attachment ID \u2014 the `id` field returned by clickup_list_document_page_attachments for the page."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"page_id",
+"attachment_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"page_id": {
+"type": "string",
+"description": "ID of the doc page the attachment belongs to."
+},
+"attachment_id": {
+"type": "string"
+},
+"title": {
+"type": "string"
+},
+"extension": {
+"description": "File extension. Absent when the attachment has none.",
+"type": "string"
+},
+"mime_type": {
+"description": "MIME type. Absent when the upstream API does not report one.",
+"type": "string"
+},
+"size": {
+"description": "File size in bytes. Absent when the upstream API does not report one.",
+"type": "number"
+},
+"url": {
+"type": "string",
+"description": "Download URL. Short-lived, and single-use on workspaces with private attachments enabled (~5 minute expiry). Fetch it immediately and exactly once; do not preview, HEAD-request, retry, or store it. If the download fails or the URL expired, call clickup_download_document_page_attachment again for a fresh URL."
+},
+"url_notice": {
+"type": "string",
+"description": "Handling instructions for the download URL."
+}
+},
+"required": [
+"success",
+"page_id",
+"attachment_id",
+"title",
+"url",
+"url_notice"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_folder",
+"description": "Create folder in ClickUp space. Use space_id (preferred) or space_name + folder name. Supports override_statuses for folder-specific statuses. Use clickup_create_list_in_folder to add lists after creation.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Folder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name": {
+"type": "string",
+"description": "Name of the folder."
+},
+"space_id": {
+"description": "ID of the space to create the folder in (preferred). Provide this instead of space_name if you already have it.",
+"type": "string"
+},
+"space_name": {
+"description": "Name of the space to create the folder in. Use this when space_id is not available.",
+"type": "string"
+},
+"override_statuses": {
+"description": "Whether to override space statuses with folder-specific statuses.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"folder_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"folder_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_folder",
+"description": "Get folder details by folder_id or folder_name (+ space info). Use to resolve folder names to IDs.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Folder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"folder_id": {
+"description": "ID of the folder to retrieve.",
+"type": "string"
+},
+"folder_name": {
+"description": "Name of the folder to retrieve. When using this, you must also provide space_id or space_name.",
+"type": "string"
+},
+"space_id": {
+"description": "ID of the space containing the folder (required with folder_name).",
+"type": "string"
+},
+"space_name": {
+"description": "Name of the space containing the folder (required with folder_name).",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"space": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"id",
+"name",
+"space"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_folder",
+"description": "Update a ClickUp folder. Requires folder_id + at least one update field (name/override_statuses). Only specified fields updated. Changes apply to all lists in folder. If you need to get a folder ID from a folder name, use clickup_get_folder first.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Folder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"folder_id": {
+"type": "string",
+"description": "ID of the folder to update."
+},
+"name": {
+"description": "New name for the folder.",
+"type": "string"
+},
+"override_statuses": {
+"description": "Whether to override space statuses with folder-specific statuses.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"folder_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"folder_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"folder_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_list",
+"description": "Create a list in a ClickUp space. Requires name and space_name or space_id. For lists in folders, use clickup_create_list_in_folder.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create List"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name": {
+"type": "string",
+"description": "Name of the list."
+},
+"space_id": {
+"description": "ID of the space to create the list in. Provide this instead of space_name if you already have the ID.",
+"type": "string"
+},
+"space_name": {
+"description": "Name of the space to create the list in. Alternative to space_id; one of them must be provided.",
+"type": "string"
+},
+"content": {
+"description": "Description or content of the list.",
+"type": "string"
+},
+"due_date": {
+"description": "Due date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"priority": {
+"description": "Priority value: 'urgent', 'high', 'normal', or 'low'.",
+"type": "string",
+"enum": [
+"urgent",
+"high",
+"normal",
+"low"
+]
+},
+"assignee": {
+"description": "User ID to assign the list to. Use clickup_resolve_assignees to convert email, username, or \"me\" to user ID if needed.",
+"type": "number"
+},
+"status": {
+"description": "Status of the list.",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"list_id": {
+"type": "string"
+},
+"list_url": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"list_id",
+"list_url"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_list_in_folder",
+"description": "Create a list in a ClickUp folder. Requires folder_id and list name. Supports content and status. If you need to get a folder ID from a folder name, use clickup_get_folder first.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create List in Folder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name": {
+"type": "string",
+"description": "Name of the list."
+},
+"folder_id": {
+"type": "string",
+"description": "ID of the folder to create the list in."
+},
+"content": {
+"description": "Description or content of the list.",
+"type": "string"
+},
+"status": {
+"description": "Status of the list (uses folder default if not specified).",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name",
+"folder_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"list_id": {
+"type": "string"
+},
+"list_url": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"list_id",
+"list_url"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_list",
+"description": "Get list details by list_id or list_name. Returns id, name, content, space info, and configured statuses. Use to resolve list names to IDs.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get List"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"list_id": {
+"description": "ID of the list to retrieve.",
+"type": "string"
+},
+"list_name": {
+"description": "List name as displayed in ClickUp. Matching ignores case and surrounding whitespace, preferring an exact match. If several lists share the name, the first match is returned \u2014 verify the space in the result. If not found, confirm the name with the user rather than retrying variants.",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"content": {
+"type": [
+"string",
+"null"
+]
+},
+"space": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false
+},
+"url": {
+"type": "string"
+},
+"statuses": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"status": {
+"type": "string",
+"description": "Status name (e.g., \"to do\", \"in progress\"). Pass this value as `status` to update_task."
+},
+"color": {
+"type": "string"
+},
+"orderindex": {
+"type": "number"
+},
+"type": {
+"type": "string",
+"description": "Status category: \"open\", \"custom\", \"closed\", \"done\", \"unstarted\". Use to distinguish \"done\" (finished, reopenable) from \"closed\" (archived)."
+}
+},
+"required": [
+"id",
+"status",
+"color",
+"orderindex",
+"type"
+],
+"additionalProperties": false
+},
+"description": "Full set of statuses configured on the list (including any inherited from the parent folder or space). Use this to discover which status values can be assigned via update_task."
+}
+},
+"required": [
+"id",
+"name",
+"space",
+"url",
+"statuses"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_list",
+"description": "Update a ClickUp list. Requires list_id + at least one update field (name/content/status). Only specified fields updated. If you need to get a list ID from a list name, use clickup_get_list first.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update List"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"list_id": {
+"type": "string",
+"description": "ID of the list to update."
+},
+"name": {
+"description": "New name for the list.",
+"type": "string"
+},
+"content": {
+"description": "New description or content for the list.",
+"type": "string"
+},
+"status": {
+"description": "New status for the list.",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"list_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"list_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_workspace_members",
+"description": "List all members in the workspace. Most tools resolve assignees automatically \u2014 use only when you need the full member list.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Workspace Members"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"members": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"name": {
+"type": [
+"string",
+"null"
+]
+},
+"username": {
+"type": [
+"string",
+"null"
+]
+},
+"email": {
+"type": [
+"string",
+"null"
+]
+},
+"role": {
+"type": "number"
+},
+"profilePicture": {
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"username",
+"email"
+],
+"additionalProperties": false
+},
+"description": "List of workspace members"
+}
+},
+"required": [
+"members"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_find_member_by_name",
+"description": "Get a member in the ClickUp workspace by name or email. Returns the member object if found, or null if not found.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Find Member by Name"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name_or_email": {
+"type": "string",
+"description": "The name or email of the member to find."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name_or_email"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"member": {
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"name": {
+"type": [
+"string",
+"null"
+]
+},
+"username": {
+"type": [
+"string",
+"null"
+]
+},
+"email": {
+"type": [
+"string",
+"null"
+]
+},
+"role": {
+"type": "number"
+},
+"profilePicture": {
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id",
+"name",
+"username",
+"email"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+],
+"description": "Found member or null"
+}
+},
+"required": [
+"member"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_resolve_assignees",
+"description": "Convert names, emails, or \"me\" to numeric ClickUp user IDs. Only needed for tools whose assignee fields require IDs (e.g. create_task, update_task, comment/list/chat assignee fields, @mentions). Do not call this before search or filter_tasks \u2014 they accept names, emails, and \"me\" directly.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Resolve Assignees"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"assignees": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of assignee names, emails, or \"me\" to resolve. Use \"me\" to refer to the currently authenticated user."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"assignees"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"userIds": {
+"type": "array",
+"items": {
+"type": [
+"string",
+"null"
+]
+},
+"description": "Array of resolved user IDs. Null entries indicate assignees that could not be resolved."
+}
+},
+"required": [
+"userIds"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_reminder",
+"description": "Create a personal reminder in your ClickUp workspace. Requires title and due_date (YYYY-MM-DD or YYYY-MM-DD HH:MM format, uses your timezone).",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Reminder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"title": {
+"type": "string",
+"description": "Title for the reminder. Ask the user what they want to be reminded about."
+},
+"description": {
+"description": "Optional description with additional details for the reminder.",
+"type": "string"
+},
+"due_date": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+"description": "Due date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format (e.g., '2025-12-31' or '2025-12-31 14:30'). Uses your user timezone. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"title",
+"due_date"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean",
+"description": "Whether the reminder was created successfully"
+},
+"reminder_id": {
+"type": "string",
+"description": "Unique identifier for the created reminder"
+}
+},
+"required": [
+"success",
+"reminder_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_search_reminders",
+"description": "Search and list your reminders. Supports filtering by type, status, completion, and since date. Date filters use YYYY-MM-DD or YYYY-MM-DD HH:MM format (e.g., '2025-01-01') in your timezone. Paginated via cursor.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Search Reminders"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"due_date_status": {
+"description": "Filter reminders by due date status (TODO, LATER, DELETED)",
+"type": "string",
+"enum": [
+"TODO",
+"LATER",
+"DELETED"
+]
+},
+"reminder_type": {
+"description": "Filter by type of reminder (ASSIGNED_COMMENT, UNANSWERED_MENTION, APPROVAL, SAVED, REMINDER)",
+"type": "string",
+"enum": [
+"ASSIGNED_COMMENT",
+"UNANSWERED_MENTION",
+"APPROVAL",
+"SAVED",
+"REMINDER"
+]
+},
+"is_overdue": {
+"description": "Filter to show only overdue reminders",
+"type": "boolean"
+},
+"is_completed": {
+"description": "Filter to show only completed or incomplete reminders",
+"type": "boolean"
+},
+"limit": {
+"description": "Maximum number of reminders to return per page (default: 25, max: 100)",
+"type": "number",
+"minimum": 1,
+"maximum": 100
+},
+"cursor": {
+"description": "Cursor for pagination. Use the next_cursor value from the previous response to fetch the next page of results",
+"type": "string"
+},
+"since": {
+"description": "Filter reminders updated since this date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format (e.g., '2025-01-01' or '2025-01-01 09:00'). For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"reminders": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the reminder"
+},
+"userId": {
+"type": "string",
+"description": "User ID of the reminder owner"
+},
+"title": {
+"description": "Reminder title",
+"type": "string"
+},
+"description": {
+"description": "Reminder description",
+"type": "string"
+},
+"dueDate": {
+"description": "Due date in ISO format",
+"type": "string"
+},
+"dueDateStatus": {
+"description": "Status of the reminder (TODO, LATER, DELETED)",
+"type": "string",
+"enum": [
+"TODO",
+"LATER",
+"DELETED"
+]
+},
+"type": {
+"description": "Type of reminder",
+"type": "string",
+"enum": [
+"ASSIGNED_COMMENT",
+"UNANSWERED_MENTION",
+"APPROVAL",
+"SAVED",
+"REMINDER"
+]
+},
+"createdAt": {
+"type": "string",
+"description": "Creation timestamp"
+},
+"completedAt": {
+"description": "Completion timestamp",
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id",
+"userId",
+"createdAt"
+],
+"additionalProperties": false
+},
+"description": "Array of reminder results"
+},
+"total_count": {
+"type": "number",
+"description": "Total number of reminders returned in this response"
+},
+"next_cursor": {
+"description": "Cursor for fetching next page of results, or null if no more results",
+"type": [
+"string",
+"null"
+]
+},
+"has_more": {
+"type": "boolean",
+"description": "Whether there are more results available"
+}
+},
+"required": [
+"reminders",
+"total_count",
+"next_cursor",
+"has_more"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_reminder",
+"description": "Update a reminder by reminder_id. Supports title, description, due_date (YYYY-MM-DD or YYYY-MM-DD HH:MM, e.g. '2025-12-31'), and is_completed.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Reminder"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"reminder_id": {
+"type": "string",
+"pattern": "^[0-9A-Za-z]{27}$",
+"description": "The unique identifier (KSUID) of the reminder to update."
+},
+"title": {
+"description": "New title for the reminder.",
+"type": "string"
+},
+"description": {
+"description": "New description for the reminder.",
+"type": "string"
+},
+"due_date": {
+"description": "New due date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format (e.g., '2025-12-31' or '2025-12-31 14:30'). Uses your user timezone. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"is_completed": {
+"description": "Set to true to mark the reminder as completed, false to mark as incomplete.",
+"type": "boolean"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"reminder_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean",
+"description": "Whether the reminder was updated successfully"
+},
+"reminder_id": {
+"type": "string",
+"description": "Unique identifier of the updated reminder"
+}
+},
+"required": [
+"success",
+"reminder_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_space_tag",
+"description": "Create a tag in a space so it can be added to tasks with clickup_add_tag_to_task. Tags belong to a space and are shared by every task in it. If a tag with the same name already exists, nothing is changed and the existing tag is returned with created=false. A previously deleted tag with the same name is restored with its old colors; the response carries the stored colors.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Space Tag"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"space_id": {
+"type": "string",
+"description": "ID of the space to create the tag in. Use clickup_get_workspace_hierarchy to find it, or clickup_get_task (space.id) when you only know a task in that space."
+},
+"name": {
+"type": "string",
+"minLength": 1,
+"description": "Name of the tag. ClickUp stores tag names in lowercase, so matching against existing tags is case-insensitive and the returned tag carries the stored (lowercase) name."
+},
+"tag_bg": {
+"description": "Tag color as #RRGGBB (e.g. \"#FF5733\"). A tag shows one color, so this is also used for tag_fg when tag_fg is omitted. Omit both colors to let ClickUp pick the default.",
+"type": "string",
+"pattern": "^#[0-9a-fA-F]{6}$"
+},
+"tag_fg": {
+"description": "Text color as #RRGGBB. Normally the same as tag_bg; used for tag_bg too when tag_bg is omitted.",
+"type": "string",
+"pattern": "^#[0-9a-fA-F]{6}$"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"space_id",
+"name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"space_id": {
+"type": "string"
+},
+"created": {
+"type": "boolean",
+"description": "false when a tag with this name already existed in the space; that tag is returned unchanged."
+},
+"tag": {
+"type": "object",
+"properties": {
+"name": {
+"type": "string"
+},
+"tag_bg": {
+"type": "string",
+"description": "Background color as #RRGGBB."
+},
+"tag_fg": {
+"type": "string",
+"description": "Foreground color as #RRGGBB."
+}
+},
+"required": [
+"name",
+"tag_bg",
+"tag_fg"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"success",
+"space_id",
+"created",
+"tag"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_add_tag_to_task",
+"description": "Add existing tag to task. Tag must exist in space. Note: Will fail if tag doesn't exist; create it first with clickup_create_space_tag.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Add Tag to Task"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of task. Works with both regular task IDs and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"tag_name": {
+"type": "string",
+"description": "Name of the tag to add to the task. The tag must already exist in the space."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"tag_name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') if the workspace has custom IDs enabled, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"tag_name": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"task_id",
+"tag_name"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_remove_tag_from_task",
+"description": "Remove tag from task. Only removes tag-task association, tag remains in space.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Remove Tag from Task"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of task. Works with both regular task IDs and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"tag_name": {
+"type": "string",
+"description": "Name of the tag to remove from the task."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"tag_name"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') when task_id was given as one, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"tag_name": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"task_id",
+"tag_name"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_add_task_dependency",
+"description": "Set a directional dependency where one task blocks the other. Use 'waiting_on' when task_id cannot start until depends_on is done, or 'blocking' when task_id is blocking depends_on. For non-blocking associations, use add_task_link instead.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Add Task Dependency"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to set the dependency on. Works with regular and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"depends_on": {
+"type": "string",
+"description": "ID of the task that task_id depends on or is blocking. Works with regular and custom IDs."
+},
+"type": {
+"type": "string",
+"enum": [
+"waiting_on",
+"blocking"
+],
+"description": "Type of dependency to add: 'waiting_on' or 'blocking'."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"depends_on",
+"type"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_remove_task_dependency",
+"description": "Remove a dependency between two tasks.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Remove Task Dependency"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to remove the dependency from. Works with both regular task IDs and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"depends_on": {
+"type": "string",
+"description": "ID of the task that was in the dependency relationship. Works with both regular task IDs and custom IDs (like 'DEV-1234')."
+},
+"type": {
+"type": "string",
+"enum": [
+"waiting_on",
+"blocking"
+],
+"description": "Type of dependency to remove: 'waiting_on' or 'blocking'."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"depends_on",
+"type"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_add_task_link",
+"description": "Link two tasks together. Creates a bidirectional association with no ordering or blocking. For blocking/dependency relationships, use add_task_dependency instead.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Add Task Link"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to link from. Works with regular and custom IDs (like 'DEV-1234')."
+},
+"links_to": {
+"type": "string",
+"description": "ID of the task to link to. Works with regular and custom IDs."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"links_to"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_remove_task_link",
+"description": "Remove a link between two tasks.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Remove Task Link"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to remove the link from. Works with both regular task IDs and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"links_to": {
+"type": "string",
+"description": "ID of the task that was linked to. Works with both regular task IDs and custom IDs (like 'DEV-1234')."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"links_to"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_create_task",
+"description": "Create a task in a ClickUp list. Requires name and list_id \u2014 ask the user which list unless it is already established, and resolve a list name with clickup_get_list (list_name) before calling. Supports assignees and watchers (user IDs, emails, usernames, or \"me\") and task_type by name.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Create Task"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/task-card.html"
+},
+"ui/resourceUri": "ui://clickup/task-card.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"name": {
+"type": "string",
+"description": "Task name. Ask the user what they want to name the task."
+},
+"list_id": {
+"type": "string",
+"description": "Numeric list ID. Reuse an id already in context; otherwise resolve the list name with clickup_get_list (list_name)."
+},
+"markdown_description": {
+"type": "string",
+"description": "Task description in markdown format."
+},
+"status": {
+"type": "string",
+"description": "Override default status. Omit to use list defaults."
+},
+"priority": {
+"type": "string",
+"enum": [
+"urgent",
+"high",
+"normal",
+"low"
+]
+},
+"due_date": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+"description": "Due date in YYYY-MM-DD or YYYY-MM-DD HH:MM format. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"start_date": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+"description": "Start date in YYYY-MM-DD or YYYY-MM-DD HH:MM format. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"parent": {
+"type": "string",
+"description": "Parent task ID to create as subtask."
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Tag names. A tag that does not exist in the space yet is created (lowercase)."
+},
+"custom_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "ID of the custom field"
+},
+"value": {
+"description": "Value for the custom field. Pass as a string \u2014 the format depends on the field type: text/url/email: the value directly. phone: must be a valid phone number in international format (e.g. '+1 234 567 8901'). dropdown: the option UUID. number/money/rating: the number as a string (e.g. '42'). date: a date string in YYYY-MM-DD or YYYY-MM-DD HH:MM format (auto-converted to timestamp). checkbox/button: 'true' or 'false'. labels: JSON array of UUIDs (e.g. '[\"uuid1\",\"uuid2\"]'). relationships/people/files: JSON with add/rem arrays (e.g. '{\"add\":[\"id1\"],\"rem\":[\"id2\"]}'). progress: JSON with current value (e.g. '{\"current\":50}'). location: JSON with location object (e.g. '{\"location\":{\"lat\":-28,\"lng\":153},\"formatted_address\":\"...\"}').",
+"type": "string"
+}
+},
+"required": [
+"id",
+"value"
+]
+},
+"description": "Array of custom field values to set on the task. Each object must have an 'id' and 'value' property."
+},
+"check_required_custom_fields": {
+"type": "boolean",
+"description": "Flag to check if all required custom fields are set before saving the task."
+},
+"assignees": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of assignee user IDs. Use clickup_resolve_assignees to convert emails, usernames, or \"me\" to user IDs if needed."
+},
+"watchers": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Users to add as watchers: user IDs, emails, usernames, or \"me\". Each needs access to the list. The creator and assignees are added automatically."
+},
+"time_estimate": {
+"type": "string",
+"description": "Time estimate in minutes (e.g., '150' for 2h 30m)."
+},
+"task_type": {
+"type": "string",
+"description": "Name of the task type (e.g., 'Bug', 'Feature', 'Milestone'). The type must exist in the workspace. If not specified, the default task type will be used."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"name",
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Usually null right after create: custom task IDs are assigned shortly after the task is created.",
+"type": [
+"string",
+"null"
+]
+},
+"task_url": {
+"type": "string",
+"description": "URL that opens this task in ClickUp. When you mention the task, present it as an inline markdown link with the task name as the anchor text, e.g. [Task name](url); never output the bare URL."
+},
+"warnings": {
+"description": "Requested watchers the task was created without. The task exists either way.",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"required": [
+"success",
+"task_id",
+"task_url"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_task",
+"description": "Retrieve a ClickUp task by ID (supports custom IDs like 'DEV-1234'). Returns a compact summary by default \u2014 core fields are always included, large sections appear as counts only (e.g. custom_fields_count: 3). Use include to fetch full data for specific sections: include: [\"custom_fields\", \"description\"]. Set expand_statuses=true to list valid statuses for update_task. URL disambiguation: a bare /t/<id> or /t/<workspace>/<id> ClickUp URL is a task, but in chat thread URLs (/v/cn/<channel_id>/t/<id> or /chat/r/<channel_id>/t/<id>) the trailing id is a chat MESSAGE id \u2014 use clickup_get_chat_message_replies for those.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Task"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/task-card.html"
+},
+"ui/resourceUri": "ui://clickup/task-card.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"include": {
+"type": "array",
+"items": {
+"type": "string",
+"enum": [
+"attachments",
+"checklists",
+"custom_fields",
+"dependencies",
+"description",
+"git_links",
+"linked_tasks",
+"subtasks",
+"watchers"
+]
+},
+"description": "Sections to return in full. Without this, large sections appear as counts (e.g. custom_fields_count: 3). Available: attachments (metadata only \u2014 id, title, extension, mimetype, size, date, source; use clickup_download_task_attachment to get a download URL), checklists (items + completion), custom_fields (fields that have a value, as {id, name, type, value}; dropdown values are resolved to option id and name, label values to id and label; a checkbox missing from the list is unchecked; text values with links also carry value_richtext; use clickup_get_custom_fields for unset fields and option lists), dependencies (blocking/waiting-on relationships), description (full text \u2014 summary truncates at 10k chars), git_links (GitHub pull requests linked to the task \u2014 title, state, author, branches, URL), linked_tasks (linked task IDs), subtasks (triggers subtask fetch from API), watchers (watching users)."
+},
+"expand_statuses": {
+"type": "boolean",
+"description": "When true, returns the full set of statuses configured on the task's list (including any inherited from the parent folder or space) under `available_statuses`. Use to discover which status values can be assigned via update_task. Off by default to keep responses lean."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+}
+},
+{
+"name": "clickup_filter_tasks",
+"description": "Retrieve tasks with combined filters (tags, lists, folders, spaces, statuses, assignees, due date range, completion date range, custom field values). Multiple values within a filter use OR logic; across filters, AND logic applies (custom_fields entries also AND together). Best for filtering tasks by structured field values. For text/keyword search across all workspace content, use search instead. For a saved view's tasks, pass view_id rather than rebuilding its filters. Custom field filters need field IDs \u2014 discover them with clickup_get_custom_fields. Results are paginated at about 100 tasks per call: the response includes has_more and next_page, and when has_more is true you MUST call again with page set to next_page (repeating until has_more is false) to retrieve every matching task \u2014 a single call is not guaranteed to be complete. Assignees accept numeric user IDs, names, emails, or \"me\" directly \u2014 no separate lookup is needed. Date filters use YYYY-MM-DD. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock. For a single task by ID, use clickup_get_task.",
+"annotations": {
+"title": "Filter Tasks",
+"readOnlyHint": true,
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/task-table.html"
+},
+"ui/resourceUri": "ui://clickup/task-table.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"view_id": {
+"description": "Saved view ID, from a view URL such as .../v/l/<view_id> (.../v/li/<id> is a list). Returns the tasks the view shows, its saved filters applied. Combine only with page and fields.",
+"type": "string",
+"minLength": 1
+},
+"fields": {
+"description": "Task fields to return besides id, name and url. Omit for all.",
+"type": "array",
+"items": {
+"type": "string",
+"enum": [
+"custom_id",
+"status",
+"priority",
+"assignees",
+"tags",
+"due_date",
+"date_updated",
+"date_closed",
+"list"
+]
+}
+},
+"tags": {
+"description": "Filter by tag names.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"list_ids": {
+"description": "Filter by List IDs.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"folder_ids": {
+"description": "Filter by Folder IDs.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"space_ids": {
+"description": "Filter by Space IDs.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"statuses": {
+"description": "Filter by task status names.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"assignees": {
+"description": "Filter by assignee. Accepts numeric user IDs, names, emails, or \"me\" (resolved automatically).",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"include_closed": {
+"description": "Include closed tasks in results",
+"type": "boolean"
+},
+"due_date_from": {
+"description": "Due date on or after (YYYY-MM-DD).",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"due_date_to": {
+"description": "Due date on or before (YYYY-MM-DD).",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"date_closed_from": {
+"description": "Completed on or after (YYYY-MM-DD).",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"date_closed_to": {
+"description": "Completed on or before (YYYY-MM-DD).",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"order_by": {
+"description": "Sort results by field. Default direction is descending \u2014 newest first for created/updated. Set reverse: true for ascending (oldest first).",
+"type": "string",
+"enum": [
+"id",
+"created",
+"updated",
+"due_date"
+]
+},
+"reverse": {
+"description": "Sort ascending (oldest first) instead of the default descending (newest first). Leave unset/false to get the most recently created/updated tasks first.",
+"type": "boolean"
+},
+"page": {
+"description": "0-indexed page number. Each call returns about 100 tasks. When a response has has_more=true, request the next page using its next_page value, and keep going until has_more=false to retrieve every matching task.",
+"type": "number"
+},
+"subtasks": {
+"default": true,
+"description": "Include subtasks in results (default: true)",
+"type": "boolean"
+},
+"custom_fields": {
+"description": "Filter by custom field values. Entries combine with AND (and with all other filters).",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"field_id": {
+"type": "string",
+"description": "Custom field ID. Discover fields with clickup_get_custom_fields \u2014 one unrecognized field_id makes the API silently drop ALL custom field filters in the call and return unfiltered results. Formula, location, button, votes, signature, rollup, progress, and app fields cannot be filtered at all (any operator errors)."
+},
+"operator": {
+"type": "string",
+"enum": [
+"=",
+"==",
+"<",
+"<=",
+">",
+">=",
+"!=",
+"!==",
+"IS NULL",
+"IS NOT NULL",
+"RANGE",
+"ANY",
+"ALL",
+"NOT ANY",
+"NOT ALL"
+],
+"description": "On text fields '=' means contains and '==' exact match; on single-value non-text fields (number, money, date, rating, checkbox, dropdown) use '=' or '!=' (exact) \u2014 '==' and '!==' only work on text fields. <, <=, >, >=, RANGE order numbers/dates. Multi-value fields (labels, people, relationships) require ANY/ALL/NOT ANY/NOT ALL, with a non-empty JSON array value. IS NULL/IS NOT NULL match unset/set fields."
+},
+"value": {
+"description": "Filter value as a string. Omit for IS NULL/IS NOT NULL. Formats: text as-is; dropdown: option UUID, or the option's orderindex when the field's type_config.options is present (those legacy dropdowns store numeric values); number/money/rating: '42'; date: YYYY-MM-DD or YYYY-MM-DD HH:MM (auto-converted to a timestamp for <, <=, >, >=, RANGE; date-only values resolve to 00:00 in your timezone); RANGE: JSON array of two numbers/dates (e.g. '[1, 5]'); ANY/ALL/NOT ANY/NOT ALL: JSON array \u2014 labels: option UUIDs, people: numeric user IDs, task/list relationships: task IDs (e.g. '[\"uuid1\",\"uuid2\"]'). For = or != on Date fields pass a millisecond epoch; date strings auto-convert only for the ordering operators.",
+"type": "string"
+}
+},
+"required": [
+"field_id",
+"operator"
+]
+}
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"tasks": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"custom_id": {
+"type": [
+"string",
+"null"
+]
+},
+"name": {
+"type": "string"
+},
+"status": {
+"type": "string"
+},
+"url": {
+"type": "string",
+"description": "URL that opens this task in ClickUp. When you mention the task, present it as an inline markdown link with the task name as the anchor text, e.g. [Task name](url); never output the bare URL."
+},
+"priority": {
+"type": [
+"string",
+"null"
+]
+},
+"assignees": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id"
+],
+"additionalProperties": false
+}
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"name": {
+"type": "string"
+}
+},
+"required": [
+"name"
+],
+"additionalProperties": false
+}
+},
+"due_date": {
+"type": [
+"string",
+"null"
+]
+},
+"date_updated": {
+"description": "Unix millisecond timestamp (as string) when the task was last updated.",
+"type": [
+"string",
+"null"
+]
+},
+"date_closed": {
+"description": "Unix millisecond timestamp (as string) when the task was completed, or null for open tasks.",
+"type": [
+"string",
+"null"
+]
+},
+"list": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"id",
+"name",
+"url"
+],
+"additionalProperties": false
+}
+},
+"count": {
+"type": "number",
+"description": "Number of tasks returned on this page."
+},
+"page": {
+"type": "number",
+"description": "0-indexed page number that was returned."
+},
+"has_more": {
+"type": "boolean",
+"description": "True when more tasks match these filters beyond this page. When true, call filter_tasks again with page set to next_page to retrieve them; do not assume this page is the complete set."
+},
+"next_page": {
+"description": "The page value to request next to continue paginating, or null when this is the last page.",
+"type": [
+"number",
+"null"
+]
+},
+"message": {
+"description": "Informational message: guidance to fetch the next page when more results are available, and/or a warning that part of the assignees filter did not match any workspace member, in which case the results are narrower than requested.",
+"type": "string"
+},
+"warnings": {
+"description": "Warnings that the filters were applied only in part. The same text is also in message.",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"required": [
+"tasks",
+"count",
+"page",
+"has_more",
+"next_page"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_update_task",
+"description": "Update task properties. Requires task_id and at least one field to change. Supports assignees (user IDs, emails, usernames, or \"me\"), custom fields as [{id, value}], task_type by name (or 'none' to reset), parent to nest the task, and watchers: {add, rem} to add or remove watchers.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Update Task"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/task-card.html"
+},
+"ui/resourceUri": "ui://clickup/task-card.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"name": {
+"type": "string"
+},
+"markdown_description": {
+"type": "string",
+"description": "Task description in markdown format."
+},
+"status": {
+"type": "string",
+"description": "New status (must be valid for the task's list)."
+},
+"priority": {
+"type": "string",
+"enum": [
+"urgent",
+"high",
+"normal",
+"low",
+"none"
+],
+"description": "Set priority, or 'none' to clear. Omit to leave unchanged."
+},
+"due_date": {
+"type": "string",
+"description": "YYYY-MM-DD or YYYY-MM-DD HH:MM format. Pass 'none' to clear. Omit to leave unchanged. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"start_date": {
+"type": "string",
+"description": "YYYY-MM-DD or YYYY-MM-DD HH:MM format. Pass 'none' to clear. Omit to leave unchanged. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"time_estimate": {
+"type": "string",
+"description": "Time estimate in minutes (e.g., '150' for 2h 30m)."
+},
+"custom_fields": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "ID of the custom field"
+},
+"value": {
+"description": "Value for the custom field. Pass as a string \u2014 the format depends on the field type: text/url/email: the value directly. phone: must be a valid phone number in international format (e.g. '+1 234 567 8901'). dropdown: the option UUID. number/money/rating: the number as a string (e.g. '42'). date: a date string in YYYY-MM-DD or YYYY-MM-DD HH:MM format (auto-converted to timestamp). checkbox/button: 'true' or 'false'. labels: JSON array of UUIDs (e.g. '[\"uuid1\",\"uuid2\"]'). relationships/people/files: JSON with add/rem arrays (e.g. '{\"add\":[\"id1\"],\"rem\":[\"id2\"]}'). progress: JSON with current value (e.g. '{\"current\":50}'). location: JSON with location object (e.g. '{\"location\":{\"lat\":-28,\"lng\":153},\"formatted_address\":\"...\"}').",
+"type": "string"
+}
+},
+"required": [
+"id",
+"value"
+]
+},
+"description": "Array of custom field values to set on the task. Each object must have an 'id' and 'value' property."
+},
+"assignees": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of assignee user IDs. Use clickup_resolve_assignees to convert emails, usernames, or \"me\" to user IDs if needed."
+},
+"watchers": {
+"type": "object",
+"properties": {
+"add": {
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"rem": {
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"description": "Users to add to or remove from the task watchers: user IDs, emails, usernames, or \"me\". Each added watcher needs access to the task. Read the current watchers with clickup_get_task include [\"watchers\"]."
+},
+"task_type": {
+"type": "string",
+"description": "To change the task type, pass the type name as a string (e.g., 'Bug', 'Feature', 'Milestone'). The type must exist in the workspace. To revert to the default 'Task' type, pass 'none'. Omit entirely to leave unchanged."
+},
+"parent": {
+"type": "string",
+"description": "Parent task ID (supports custom IDs). The task moves into the parent's list and stops being private, since subtasks cannot be private. A subtask cannot be made a top-level task through this tool. Omit to leave unchanged."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') if the workspace has custom IDs enabled, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"task_url": {
+"type": "string",
+"description": "URL that opens this task in ClickUp. When you mention the task, present it as an inline markdown link with the task name as the anchor text, e.g. [Task name](url); never output the bare URL."
+}
+},
+"required": [
+"success",
+"task_id",
+"task_url"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_delete_task",
+"description": "Delete a task by task_id (supports custom IDs like 'DEV-1234'). Always confirm the task_id with the user before deleting.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Delete Task"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID to delete (supports custom IDs like 'DEV-1234')"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') if the workspace has custom IDs enabled, otherwise null.",
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"success",
+"task_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_move_task",
+"description": "Move a root task to a new home list. Requires task_id (regular or custom ID) and a numeric list_id \u2014 resolve list names with clickup_get_list (list_name) first. Subtasks cannot be moved; move the parent instead. The task's current status must exist in the destination list; otherwise set a matching status with clickup_update_task before moving.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Move Task"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to move. Works with regular and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"list_id": {
+"type": "string",
+"description": "Numeric ID of the destination list. Resolve a list name with clickup_get_list (list_name) first."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"task_id": {
+"type": "string"
+},
+"custom_id": {
+"description": "Custom task ID (e.g., 'DEV-1234') when task_id was given as one, otherwise null.",
+"type": [
+"string",
+"null"
+]
+},
+"new_list_id": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"task_id",
+"new_list_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_add_task_to_list",
+"description": "Add a task to an additional list (keeps current home list). Requires the Tasks in Multiple Lists ClickApp to be enabled.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Add Task to List"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to add. Works with regular and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"list_id": {
+"type": "string",
+"description": "Numeric ID of the additional list to add the task to. The task remains in its original list. Resolve a list name with clickup_get_list (list_name) first."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_remove_task_from_list",
+"description": "Remove a task from an additional list (cannot remove from home list). Requires the Tasks in Multiple Lists ClickApp to be enabled.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Remove Task from List"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the task to remove from the additional list. Works with regular and custom IDs (like 'DEV-1234'). Note: a task cannot be removed from its home list."
+},
+"list_id": {
+"type": "string",
+"description": "Numeric ID of the additional list to remove the task from. Resolve a list name with clickup_get_list (list_name) first."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+}
+},
+"required": [
+"success"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_merge_tasks",
+"description": "Merge one or more source tasks into a target task. The target task survives and absorbs content from the source tasks, which are consumed. Destination field values take precedence on conflicts. Works with both regular task IDs and custom IDs (like 'DEV-1234').",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Merge Tasks"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of the target/destination task that will survive the merge. Source tasks will be merged into this task. Works with both regular task IDs and custom IDs (like 'DEV-1234')."
+},
+"source_task_ids": {
+"minItems": 1,
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of task IDs to merge into the target task. These tasks will be consumed/deleted after merging. Works with both regular task IDs and custom IDs (like 'DEV-1234')."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"source_task_ids"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"merged_task_id": {
+"type": "string",
+"description": "The ID of the surviving target task."
+}
+},
+"required": [
+"success",
+"merged_task_id"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_start_time_tracking",
+"description": "Start time tracking on a task. Supports description, billable status, and tags. Only one timer can be running at a time. For best results, omit extra parameters unless specifically needed.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Start Time Tracking"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/timer.html"
+},
+"ui/resourceUri": "ui://clickup/timer.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"description": {
+"type": "string",
+"description": "Description for the time entry. Keep short and simple, or omit for best compatibility."
+},
+"billable": {
+"type": "boolean",
+"description": "Whether this time is billable. Default is workspace setting."
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of tag names to assign to the time entry."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message": {
+"type": "string"
+},
+"timeEntry": {},
+"taskId": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"message",
+"timeEntry",
+"taskId"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_stop_time_tracking",
+"description": "Stop the currently running time tracker. Supports description and tags. Returns the completed time entry details.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Stop Time Tracking"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"description": {
+"type": "string",
+"description": "Description to update or add to the time entry."
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of tag names to assign to the time entry."
+},
+"time_entry_id": {
+"type": "string",
+"description": "Stop only this time entry: the call fails, stopping nothing, when another timer is running."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message": {
+"type": "string"
+},
+"timeEntry": {}
+},
+"required": [
+"success",
+"message",
+"timeEntry"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_add_time_entry",
+"description": "Add a manual time entry to a task. You can provide either (start + duration) OR (start + end). The tool will calculate missing values. Requires task_id, start time, and either duration or end time. Supports description, billable flag, and tags.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": false,
+"title": "Add Time Entry"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID (supports custom IDs like 'DEV-1234')"
+},
+"start": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$",
+"description": "Start time in YYYY-MM-DD HH:MM format (e.g., '2025-01-15 09:30'). Time is required for time tracking entries. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"duration": {
+"type": "string",
+"description": "Duration of the time entry. Format as 'Xh Ym' (e.g., '1h 30m') or just minutes (e.g., '90m'). Either duration or end_time is required."
+},
+"end_time": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}$",
+"description": "End time in YYYY-MM-DD HH:MM format (e.g., '2025-01-15 11:00'). Time is required for time tracking entries. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"description": {
+"type": "string",
+"description": "Description for the time entry. Keep short and simple, or omit for best compatibility."
+},
+"billable": {
+"type": "boolean",
+"description": "Whether this time is billable. Default is workspace setting."
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of tag names to assign to the time entry."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id",
+"start"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"success": {
+"type": "boolean"
+},
+"message": {
+"type": "string"
+},
+"timeEntry": {},
+"taskId": {
+"type": "string"
+}
+},
+"required": [
+"success",
+"message",
+"timeEntry",
+"taskId"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_current_time_entry",
+"description": "Get the currently running time entry, if any. No parameters needed.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Current Time Entry"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/timer.html"
+},
+"ui/resourceUri": "ui://clickup/timer.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"currentEntry": {
+"anyOf": [
+{},
+{
+"type": "null"
+}
+]
+},
+"isTracking": {
+"type": "boolean"
+},
+"message": {
+"type": "string"
+}
+},
+"required": [
+"currentEntry",
+"isTracking",
+"message"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_time_entries",
+"description": "Get time entries with optional filtering by task, date range, assignee, and billable status. Pass task_id to scope to a single task, or omit for workspace-wide results. IMPORTANT: without assignee, only the authenticated user's entries are returned \u2014 pass 'any' to get all users' entries, or specific user IDs (comma-separated) for targeted queries.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Time Entries"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/timesheet.html"
+},
+"ui/resourceUri": "ui://clickup/timesheet.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "Task ID to scope entries to (supports custom IDs like 'DEV-1234'). Omit to query workspace-wide."
+},
+"start_date": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+"description": "Start date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"end_date": {
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$",
+"description": "End date in YYYY-MM-DD format or date-time in YYYY-MM-DD HH:MM format. For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock."
+},
+"assignee": {
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Filter by assignee user IDs. Pass numeric user IDs (e.g. ['123', '456']) or include 'any' to get ALL users' entries. IMPORTANT: when omitted, the API returns only the authenticated user's entries. Use get_workspace_members to look up user IDs."
+},
+"is_billable": {
+"type": "boolean",
+"description": "Filter by billable status. Set to true for only billable entries, false for non-billable. Omit to get all entries."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"entries": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"description": {
+"type": "string"
+},
+"start": {
+"type": "string"
+},
+"end": {
+"type": [
+"string",
+"null"
+]
+},
+"duration": {
+"type": "string"
+},
+"duration_ms": {
+"type": "number"
+},
+"billable": {
+"type": "boolean"
+},
+"tags": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"name": {
+"type": "string"
+},
+"tag_bg": {
+"type": [
+"string",
+"null"
+]
+},
+"tag_fg": {
+"type": [
+"string",
+"null"
+]
+},
+"creator": {
+"type": [
+"number",
+"null"
+]
+}
+},
+"required": [
+"name"
+],
+"additionalProperties": false
+}
+},
+"user": {
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"username": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"username"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"task": {
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"status": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name",
+"status"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+},
+"task_location": {
+"anyOf": [
+{
+"type": "object",
+"properties": {
+"list_name": {
+"type": "string"
+},
+"folder_name": {
+"type": "string"
+},
+"space_name": {
+"type": "string"
+}
+},
+"required": [
+"list_name",
+"folder_name",
+"space_name"
+],
+"additionalProperties": false
+},
+{
+"type": "null"
+}
+]
+}
+},
+"required": [
+"id",
+"description",
+"start",
+"end",
+"duration",
+"duration_ms",
+"billable",
+"tags",
+"user",
+"task",
+"task_location"
+],
+"additionalProperties": false
+}
+},
+"summary": {
+"type": "object",
+"properties": {
+"total_entries": {
+"type": "number"
+},
+"total_duration": {
+"type": "string"
+},
+"total_duration_ms": {
+"type": "number"
+},
+"by_task": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string"
+},
+"task_name": {
+"type": "string"
+},
+"total_duration": {
+"type": "string"
+},
+"total_duration_ms": {
+"type": "number"
+},
+"entry_count": {
+"type": "number"
+}
+},
+"required": [
+"task_id",
+"task_name",
+"total_duration",
+"total_duration_ms",
+"entry_count"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"total_entries",
+"total_duration",
+"total_duration_ms",
+"by_task"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"entries",
+"summary"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_task_time_in_status",
+"description": "Get the time a task has spent in each status. Returns the current status with elapsed time and the full status history with time spent in each status. Requires the \"Total time in Status\" ClickApp to be enabled in the workspace.",
+"annotations": {
+"title": "Get Task Time in Status",
+"readOnlyHint": true,
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/time-in-status.html"
+},
+"ui/resourceUri": "ui://clickup/time-in-status.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string",
+"description": "ID of task. Works with both regular task IDs and custom IDs (like 'DEV-1234'). Use clickup_search to find task ID by name if needed."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_id": {
+"type": "string"
+},
+"current_status": {
+"type": "object",
+"properties": {
+"status": {
+"type": "string"
+},
+"color": {
+"type": "string"
+},
+"total_time": {
+"type": "string"
+},
+"total_time_minutes": {
+"type": "number"
+},
+"since": {
+"type": "string"
+}
+},
+"required": [
+"status",
+"color",
+"total_time",
+"total_time_minutes",
+"since"
+],
+"additionalProperties": false
+},
+"status_history": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"status": {
+"type": "string"
+},
+"color": {
+"type": [
+"string",
+"null"
+]
+},
+"type": {
+"type": "string"
+},
+"total_time": {
+"type": "string"
+},
+"total_time_minutes": {
+"type": "number"
+},
+"since": {
+"type": "string"
+},
+"orderindex": {
+"type": "number"
+}
+},
+"required": [
+"status",
+"color",
+"type",
+"total_time",
+"total_time_minutes",
+"since"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"task_id",
+"current_status",
+"status_history"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_bulk_tasks_time_in_status",
+"description": "Get the time multiple tasks have spent in each status (bulk operation, up to 100 tasks). Returns a map of task IDs to their status history and current status time data. Requires the \"Total time in Status\" ClickApp to be enabled in the workspace.",
+"annotations": {
+"title": "Get Bulk Tasks Time in Status",
+"readOnlyHint": true,
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/time-in-status.html"
+},
+"ui/resourceUri": "ui://clickup/time-in-status.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"task_ids": {
+"minItems": 1,
+"maxItems": 100,
+"type": "array",
+"items": {
+"type": "string"
+},
+"description": "Array of task IDs to get time in status for (1-100 tasks). Works with both regular task IDs and custom IDs (like 'DEV-1234')."
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"task_ids"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"tasks": {
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {
+"type": "object",
+"properties": {
+"current_status": {
+"type": "object",
+"properties": {
+"status": {
+"type": "string"
+},
+"color": {
+"type": "string"
+},
+"total_time": {
+"type": "string"
+},
+"total_time_minutes": {
+"type": "number"
+},
+"since": {
+"type": "string"
+}
+},
+"required": [
+"status",
+"color",
+"total_time",
+"total_time_minutes",
+"since"
+],
+"additionalProperties": false
+},
+"status_history": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"status": {
+"type": "string"
+},
+"color": {
+"type": [
+"string",
+"null"
+]
+},
+"type": {
+"type": "string"
+},
+"total_time": {
+"type": "string"
+},
+"total_time_minutes": {
+"type": "number"
+},
+"since": {
+"type": "string"
+},
+"orderindex": {
+"type": "number"
+}
+},
+"required": [
+"status",
+"color",
+"type",
+"total_time",
+"total_time_minutes",
+"since"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"current_status",
+"status_history"
+],
+"additionalProperties": false
+}
+},
+"task_count": {
+"type": "number"
+}
+},
+"required": [
+"tasks",
+"task_count"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_user",
+"description": "Get the authenticated user: id, username and email, plus their ClickUp account timezone, week-start day, and the current date and time in that timezone. Call this before computing any relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\") for other tools: your own clock or an assumed timezone can silently land on the wrong day for this user. Date parameters on other tools accept concrete dates only; resolve relative expressions against current_time. Assignee fields accept \"me\" directly, so no lookup is needed to act as the user.",
+"annotations": {
+"title": "Get User",
+"readOnlyHint": true,
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"id": {
+"type": "number",
+"description": "Numeric id of the authenticated user; the value \"me\" resolves to in assignee and creator fields"
+},
+"username": {
+"type": "string",
+"description": "The user's display name"
+},
+"email": {
+"type": "string",
+"description": "The user's email address"
+},
+"initials": {
+"description": "The user's initials as ClickUp shows them",
+"type": "string"
+},
+"color": {
+"description": "The user's avatar color, hex",
+"type": "string"
+},
+"profile_picture": {
+"description": "URL of the user's profile picture, when one is set",
+"type": "string"
+},
+"timezone": {
+"type": "string",
+"description": "The user's ClickUp account timezone as an IANA zone name, e.g. America/New_York. UTC when the account has none set."
+},
+"week_start_day": {
+"type": "string",
+"enum": [
+"sunday",
+"monday"
+],
+"description": "First day of the week per the user's ClickUp settings; defines what 'this week' means for them"
+},
+"current_time": {
+"type": "string",
+"description": "Current date and time as ISO 8601 in the user's ClickUp account timezone, e.g. 2026-08-28T14:32:05-04:00"
+},
+"current_time_utc": {
+"type": "string",
+"description": "Current date and time as ISO 8601 in UTC"
+},
+"utc_offset": {
+"type": "string",
+"description": "The timezone's current UTC offset, e.g. -04:00 (DST-aware)"
+},
+"day_of_week": {
+"type": "string",
+"description": "Today's weekday name in the user's timezone, lowercase, e.g. friday"
+}
+},
+"required": [
+"id",
+"username",
+"email",
+"timezone",
+"week_start_day",
+"current_time",
+"current_time_utc",
+"utc_offset",
+"day_of_week"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_execute_operator",
+"description": "Run one enabled Unified API operator (a `<model>.<operator>` pair) as the authenticated user, in the session workspace. The operator catalog is how this server exposes ClickUp operations beyond the dedicated clickup_* tools, and it grows over time: reach for it when no dedicated tool fits the request or when a request spans many objects (for example several tasks to change, create or read). Call clickup_get_operators first; it lists the enabled operators with each one's parameters and request-body schema, and only enabled operators are callable. Prefer a dedicated clickup_* tool when one covers the whole request in a single call. workspace_id is taken from the session and cannot be overridden. Operators that return full objects (creates and updates included) can produce very large results: pass query with the request to project only the fields you need. Errors carry the upstream status, operationId and response body. Do not retry a call that timed out: the operation may have completed.",
+"annotations": {
+"destructiveHint": true,
+"idempotentHint": false,
+"openWorldHint": true,
+"readOnlyHint": false,
+"title": "Execute Unified API Operator"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"model": {
+"type": "string",
+"description": "Lowercase model name from clickup_get_operators."
+},
+"operator": {
+"type": "string",
+"enum": [
+"get",
+"list",
+"create",
+"update",
+"delete",
+"get_many",
+"list_children",
+"duplicate",
+"merge",
+"archive",
+"unarchive",
+"restore",
+"search",
+"move",
+"create_many",
+"update_many",
+"delete_many"
+],
+"description": "Operator from the canonical taxonomy, e.g. `get_many`, `update_many`. Only enabled pairs are accepted."
+},
+"operation_id": {
+"description": "Underlying API operationId; only needed when clickup_get_operators lists several for the pair.",
+"type": "string"
+},
+"parameters": {
+"description": "Path and query parameters keyed by the names shown by clickup_get_operators (e.g. `list_id`). workspace_id is filled in automatically.",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"body": {
+"description": "Request body shaped per the schema shown by clickup_get_operators.",
+"type": "object",
+"propertyNames": {
+"type": "string"
+},
+"additionalProperties": {}
+},
+"query": {
+"description": "Optional JMESPath expression applied to the response to return only what you need, e.g. `items[*].{id: id, name: name}`.",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"model",
+"operator"
+]
+}
+},
+{
+"name": "clickup_get_operators",
+"description": "Lists the Unified API operators enabled on this server (`<model>.<operator>` pairs) with each one's HTTP route, parameters and request/response body schema, as Markdown. The catalog is how this server exposes ClickUp operations beyond the dedicated clickup_* tools, and it grows over time: call this whenever no dedicated tool fits the request, whenever a request spans many objects, and always before clickup_execute_operator to build a correct call. It is also the only reliable answer to what this server can do: answer any question about its capabilities by calling it, never from tool names or descriptions. Operators that are not enabled are never shown.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "List Unified API Operators"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"model_operators": {
+"description": "Restrict the output to these `<model>.<operator>` pairs.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"models": {
+"description": "Restrict the output to every enabled operator of these models.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+}
+},
+{
+"name": "clickup_get_schema",
+"description": "Returns the entity-relationship schema (Markdown with a Mermaid ER diagram) for the models behind the enabled Unified API operators. Optional background before a clickup_execute_operator call; not needed for the dedicated clickup_* tools.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Unified API Entity Schema"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"detailed": {
+"description": "Include the long-form description of each entity and relationship instead of the one-line summary.",
+"type": "boolean"
+},
+"entities_only": {
+"description": "Return only the entity list \u2014 no relationships, no diagram.",
+"type": "boolean"
+},
+"names": {
+"description": "Restrict the output to these entity names (lowercase). Only enabled models are returned.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"tier": {
+"description": "Minimum importance tier to include: `primary` (overview), `secondary`, or `attribute` (everything, the default).",
+"type": "string",
+"enum": [
+"primary",
+"secondary",
+"attribute"
+]
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+}
+},
+{
+"name": "clickup_search",
+"description": "Search across all workspace content (tasks, docs, dashboards, attachments, whiteboards, chats, forms). Best for keyword/text matching across all content types. For filtering tasks by field values (status, priority, tags, dates), use filter_tasks instead. Supports filtering by assignees, creators, status, location, asset types, and date ranges. Date filters use YYYY-MM-DD or YYYY-MM-DD HH:MM format in your timezone. Results are paginated: the response includes next_cursor whenever more results exist. When next_cursor is present you MUST call search again with that value in the cursor field (repeating until next_cursor is absent) to retrieve every match \u2014 a single call is not guaranteed to be complete.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Search Workspace"
+},
+"_meta": {
+"ui": {
+"resourceUri": "ui://clickup/search-results.html"
+},
+"ui/resourceUri": "ui://clickup/search-results.html",
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"keywords": {
+"description": "Search query string. Use specific keywords to find items",
+"type": "string"
+},
+"sort": {
+"description": "Sort criteria for results. Can specify multiple sort fields in priority order",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"field": {
+"type": "string",
+"enum": [
+"created_at",
+"updated_at"
+],
+"description": "The field to sort by (created_at or updated_at)"
+},
+"direction": {
+"type": "string",
+"enum": [
+"asc",
+"desc"
+],
+"description": "Sort order (asc for ascending, desc for descending)"
+}
+},
+"required": [
+"field",
+"direction"
+],
+"description": "Single sort criteria"
+}
+},
+"filters": {
+"description": "Filters to refine search results by various criteria",
+"type": "object",
+"properties": {
+"assignees": {
+"description": "Assignee user IDs, names, emails, or \"me\" \u2014 resolved automatically, no separate lookup needed.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"creators": {
+"description": "Creator user IDs, names, emails, or \"me\" \u2014 resolved automatically, no separate lookup needed.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"task_statuses": {
+"description": "Filter tasks by their status (unstarted, active, done, closed, or archived)",
+"type": "array",
+"items": {
+"type": "string",
+"enum": [
+"unstarted",
+"active",
+"done",
+"closed",
+"archived"
+],
+"description": "Task status filter values"
+}
+},
+"location": {
+"type": "object",
+"properties": {
+"projects": {
+"description": "Filter by Space IDs. Returns items from these Spaces",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"categories": {
+"description": "Filter by Folder IDs. Returns items from these Folders",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"subcategories": {
+"description": "Filter by List IDs. Returns items from these Lists",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"description": "Location filters for hierarchical organization (Spaces, Folders, Lists)"
+},
+"asset_types": {
+"description": "Filter by asset types (task, doc, whiteboard, dashboard, attachment, or chat)",
+"type": "array",
+"items": {
+"type": "string",
+"enum": [
+"task",
+"doc",
+"whiteboard",
+"dashboard",
+"attachment",
+"chat"
+],
+"description": "Type of ClickUp asset to search for"
+}
+},
+"created_date_from": {
+"description": "Filter items created on or after this date. Format: YYYY-MM-DD or YYYY-MM-DD HH:MM (e.g., \"2025-01-01\" or \"2025-01-01 09:00\"). For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"created_date_to": {
+"description": "Filter items created on or before this date. Format: YYYY-MM-DD or YYYY-MM-DD HH:MM (e.g., \"2025-12-31\" or \"2025-12-31 23:59\"). For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"due_date_from": {
+"description": "Filter items with due date on or after this date. Format: YYYY-MM-DD or YYYY-MM-DD HH:MM (e.g., \"2025-01-01\" or \"2025-01-01 09:00\"). For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+},
+"due_date_to": {
+"description": "Filter items with due date on or before this date. Format: YYYY-MM-DD or YYYY-MM-DD HH:MM (e.g., \"2025-12-31\" or \"2025-12-31 23:59\"). For a relative date (\"today\", \"tomorrow\", \"this week\", \"overdue\"), call clickup_get_user first and compute from its current_time, not from your own clock.",
+"type": "string",
+"pattern": "^\\d{4}-\\d{2}-\\d{2}( \\d{2}:\\d{2})?$"
+}
+}
+},
+"count": {
+"description": "Maximum number of results to return per page (for pagination)",
+"type": "number"
+},
+"cursor": {
+"description": "Pagination cursor from previous response. Use to fetch next page of results",
+"type": "string"
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"overview": {
+"type": "string",
+"description": "A high-level overview of the search results including count and types found. May end with a warning that part of an assignees or creators filter did not match any workspace member, in which case the results are narrower than requested."
+},
+"results": {
+"type": "array",
+"items": {
+"oneOf": [
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "task"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "URL that opens this task in ClickUp. When you mention the task, present it as an inline markdown link with the task name as the anchor text, e.g. [Task name](url); never output the bare URL."
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+},
+"status": {
+"description": "Current task status",
+"type": "string"
+},
+"assignees": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "number"
+},
+"email": {
+"type": [
+"string",
+"null"
+]
+},
+"username": {
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"id"
+],
+"additionalProperties": false
+}
+},
+"custom_id": {
+"description": "Custom task ID if configured",
+"type": [
+"string",
+"null"
+]
+},
+"taskType": {
+"description": "Task type name (e.g., \"Bug\", \"Milestone\") if set",
+"type": [
+"string",
+"null"
+]
+},
+"archived": {
+"description": "Whether this task is archived",
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "doc"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+},
+"pageId": {
+"description": "Page ID within the document",
+"type": "string"
+},
+"pageName": {
+"description": "Page name",
+"type": "string"
+},
+"pageHierarchy": {
+"description": "Page hierarchy path",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "dashboard"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "attachment"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+},
+"downloadUrl": {
+"type": "string",
+"description": "Download URL for the attachment"
+},
+"uploadDate": {
+"description": "Upload timestamp",
+"type": "string"
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url",
+"downloadUrl"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "whiteboard"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "chat"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+},
+"matchingMessages": {
+"description": "Messages within this chat that match the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Message ID"
+},
+"dateCreated": {
+"type": "string",
+"description": "Message creation timestamp"
+},
+"message": {
+"type": "string",
+"description": "Message content"
+},
+"messageHighlight": {
+"description": "Highlighted portions of message",
+"type": "array",
+"items": {
+"type": "string"
+}
+}
+},
+"required": [
+"id",
+"dateCreated",
+"message"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+},
+{
+"type": "object",
+"properties": {
+"id": {
+"type": "string",
+"description": "Unique identifier for the item"
+},
+"type": {
+"type": "string",
+"const": "form"
+},
+"name": {
+"type": "string",
+"description": "Display name of the item"
+},
+"nameHighlight": {
+"description": "Highlighted portions of name matching search query",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"url": {
+"type": "string",
+"description": "Direct URL to access the item in ClickUp"
+},
+"hierarchy": {
+"description": "Hierarchical location in workspace",
+"type": "object",
+"properties": {
+"project": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Space"
+},
+"category": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"hidden": {
+"type": "boolean"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Folder"
+},
+"subcategory": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "List"
+},
+"task": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"custom_id": {
+"type": "string"
+}
+},
+"required": [
+"id",
+"name"
+],
+"additionalProperties": false,
+"description": "Parent task"
+}
+},
+"additionalProperties": false
+},
+"dateUpdated": {
+"description": "Last update timestamp",
+"type": "string"
+},
+"searchContext": {
+"description": "Information about how the search keywords matched this item",
+"type": "object",
+"properties": {
+"keywords": {
+"type": "string",
+"description": "The search keywords that were used"
+},
+"hasNameMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in the item name"
+},
+"hasContentMatch": {
+"type": "boolean",
+"description": "Whether keywords matched in item content (description, messages, etc.)"
+}
+},
+"required": [
+"keywords",
+"hasNameMatch",
+"hasContentMatch"
+],
+"additionalProperties": false
+},
+"contentSnippet": {
+"description": "Highlighted snippet from item content (docs, dashboards, whiteboards, forms)",
+"type": "string"
+},
+"descriptionSnippet": {
+"description": "Highlighted snippet from task description",
+"type": "string"
+},
+"fileContentSnippet": {
+"description": "Highlighted snippet from attachment file content",
+"type": "string"
+},
+"customFieldMatches": {
+"description": "Custom fields that matched the search query",
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"fieldName": {
+"type": "string",
+"description": "Name of the custom field that matched"
+},
+"snippet": {
+"type": "string",
+"description": "Highlighted snippet from the custom field value"
+}
+},
+"required": [
+"fieldName",
+"snippet"
+],
+"additionalProperties": false,
+"description": "Information about a custom field that matched the search query"
+}
+}
+},
+"required": [
+"id",
+"type",
+"name",
+"url"
+],
+"additionalProperties": false
+}
+]
+},
+"description": "Array of formatted search results"
+},
+"next_cursor": {
+"description": "Pagination cursor for fetching next page, or null if no more results",
+"type": [
+"string",
+"null"
+]
+}
+},
+"required": [
+"overview",
+"results",
+"next_cursor"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_workspace_hierarchy",
+"description": "Get workspace hierarchy (spaces, folders, lists) with pagination and depth control. Use to browse the structure or to find a space, folder, or list whose name is unknown. When the name is known, clickup_get_list and clickup_get_folder resolve it to an id directly; task tools take ids only.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": false,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get Workspace Hierarchy"
+},
+"_meta": {
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"cursor": {
+"description": "Pagination cursor from previous response. Use to fetch next page of spaces",
+"type": "string"
+},
+"limit": {
+"description": "Maximum number of spaces to return per page (default: 10, max: 50)",
+"type": "number",
+"minimum": 1,
+"maximum": 50
+},
+"max_depth": {
+"description": "Maximum depth of hierarchy to return: 0=spaces only, 1=spaces+folders, 2=spaces+folders+lists (default: 2)",
+"type": "string",
+"enum": [
+"0",
+"1",
+"2"
+]
+},
+"space_ids": {
+"description": "Filter to return only specific spaces by ID.",
+"type": "array",
+"items": {
+"type": "string"
+}
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+}
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"hierarchy": {
+"type": "object",
+"properties": {
+"root": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"children": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"id": {
+"type": "string"
+},
+"name": {
+"type": "string"
+},
+"type": {
+"type": "string"
+},
+"children": {
+"type": "array",
+"items": {}
+}
+},
+"required": [
+"id",
+"name",
+"children"
+],
+"additionalProperties": false
+}
+}
+},
+"required": [
+"id",
+"name",
+"children"
+],
+"additionalProperties": false
+}
+},
+"required": [
+"root"
+],
+"additionalProperties": false,
+"description": "Workspace hierarchy tree containing paginated spaces"
+},
+"next_cursor": {
+"description": "Cursor for next page of spaces, or null if no more pages",
+"type": [
+"string",
+"null"
+]
+},
+"has_more": {
+"type": "boolean",
+"description": "Whether there are more spaces to fetch"
+},
+"total_spaces": {
+"type": "number",
+"description": "Total number of spaces in workspace (after filtering if space_ids provided)"
+}
+},
+"required": [
+"hierarchy",
+"next_cursor",
+"has_more",
+"total_spaces"
+],
+"additionalProperties": false
+}
+},
+{
+"name": "clickup_get_list_location",
+"description": "Get the names and links of the space and folders that contain a list, for the ClickUp task card view. To find a list, use clickup_get_list or clickup_get_workspace_hierarchy instead.",
+"annotations": {
+"destructiveHint": false,
+"idempotentHint": true,
+"openWorldHint": false,
+"readOnlyHint": true,
+"title": "Get List Location"
+},
+"_meta": {
+"ui": {
+"visibility": [
+"app"
+]
+},
+"securitySchemes": [
+{
+"type": "noauth"
+}
+]
+},
+"inputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"list_id": {
+"type": "string",
+"minLength": 1,
+"description": "ID of the list."
+},
+"space_id": {
+"description": "ID of the space that contains the list, when known.",
+"type": "string",
+"minLength": 1
+},
+"workspace_id": {
+"description": "Workspace ID (digits only). Only needed when you have multiple workspaces.",
+"type": "string",
+"pattern": "^\\d+$"
+}
+},
+"required": [
+"list_id"
+]
+},
+"outputSchema": {
+"$schema": "https://json-schema.org/draft/2020-12/schema",
+"type": "object",
+"properties": {
+"crumbs": {
+"type": "array",
+"items": {
+"type": "object",
+"properties": {
+"name": {
+"type": "string"
+},
+"url": {
+"type": "string"
+}
+},
+"required": [
+"name",
+"url"
+],
+"additionalProperties": false
+},
+"description": "The space, the folders from the space down, and the list, each with its ClickUp URL."
+}
+},
+"required": [
+"crumbs"
+],
+"additionalProperties": false
+}
+}
+]

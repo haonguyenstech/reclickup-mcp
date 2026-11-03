@@ -221,10 +221,38 @@ def write_out(obj):
         sys.stdout.write(json.dumps(obj) + "\n"); sys.stdout.flush()
 
 
+KNOWN_CACHE = os.path.join(os.path.expanduser("~"), ".reclickup", "official_tools.json")
+KNOWN_BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "official_tools.json")
+
+
+def load_known_tools():
+    """Official tools from the last live listing (or the snapshot shipped with the package).
+
+    Claude Desktop lists tools once per server start and ignores tools/list_changed. On a first run
+    the official server is still waiting for OAuth when that happens, so without this list Claude
+    only ever saw clickup_doc_write / clickup_relogin and told users it could not create tasks."""
+    for path in (KNOWN_CACHE, KNOWN_BUNDLED):
+        try:
+            with open(path, encoding="utf-8") as f:
+                tools = json.load(f)
+            if tools: return tools
+        except Exception: pass
+    return []
+
+
+def save_known_tools(tools):
+    if not tools: return
+    try:
+        os.makedirs(os.path.dirname(KNOWN_CACHE), exist_ok=True)
+        with open(KNOWN_CACHE, "w", encoding="utf-8") as f: json.dump(tools, f)
+    except Exception: pass
+
+
 class Upstream:
     def __init__(self):
         self.proc = None; self.n = 0; self.pending = {}; self.lock = threading.Lock()
         self.ready = threading.Event(); self.error = None; self.tools = []
+        self.known = load_known_tools()   # listed until the live upstream answers (see tools/list)
 
     def start(self):
         threading.Thread(target=self._boot, daemon=True).start()
@@ -240,6 +268,7 @@ class Upstream:
                                         "clientInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}, timeout=300)
             self.notify("notifications/initialized")
             self.tools = self.request("tools/list", {}, timeout=120).get("tools", [])
+            save_known_tools(self.tools)
             # The client may have listed tools before the upstream was ready (first run waits for OAuth
             # in the browser): tell it to list again.
             write_out({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
@@ -265,6 +294,7 @@ class Upstream:
     def _refresh(self):
         try:
             self.tools = self.request("tools/list", {}, timeout=120).get("tools", [])
+            save_known_tools(self.tools)
             write_out({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
         except Exception: pass
 
@@ -310,7 +340,8 @@ def handle(msg):
         # browser. Our tools are listed now; tools/list_changed follows once the official ones arrive.
         UP.ready.wait(15)
         mine = {TOOL["name"], RELOGIN_TOOL["name"]}
-        return {"tools": [t for t in UP.tools if t.get("name") not in mine] + [TOOL, RELOGIN_TOOL]}
+        official = UP.tools or UP.known
+        return {"tools": [t for t in official if t.get("name") not in mine] + [TOOL, RELOGIN_TOOL]}
     if m == "tools/call":
         p = msg["params"]; a = p.get("arguments") or {}
         if p.get("name") == RELOGIN_TOOL["name"]:
@@ -320,7 +351,11 @@ def handle(msg):
             except Exception as e:
                 return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
         if p.get("name") != TOOL["name"]:
-            UP.ready.wait(90)
+            UP.ready.wait(300)            # first call may be waiting for the user to approve OAuth in the browser
+            if not UP.ready.is_set():
+                return {"content": [{"type": "text", "text": "The official ClickUp MCP is waiting for sign-in: approve "
+                         "the ClickUp page that opened in the browser (Connect Workspace), then call this tool again."}],
+                        "isError": True}
             if UP.error and not UP.tools:
                 return {"content": [{"type": "text", "text": f"Official ClickUp MCP unavailable: {UP.error}"}], "isError": True}
             try: return UP.request("tools/call", p, timeout=300)
@@ -353,7 +388,20 @@ def respond(msg):
     write_out(out)
 
 
+def shutdown(*_):
+    """Leave nothing running: the headless Edge is detached, so it would outlive this process."""
+    try: browser.stop()
+    except Exception: pass
+    try:
+        if UP.proc: UP.proc.terminate()
+    except Exception: pass
+
+
 def main():
+    import atexit, signal
+    atexit.register(shutdown)
+    for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
+        if sig is not None: signal.signal(sig, lambda *a: sys.exit(0))
     UP.start()
     for line in sys.stdin:
         if not line.strip(): continue
