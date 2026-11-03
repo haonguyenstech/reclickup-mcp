@@ -158,7 +158,7 @@ class ProxyTests(unittest.TestCase):
             r = s.call_raw("resources/read", {"uri": "ui://clickup/task-card.html"})["result"]
             self.assertEqual(r["contents"][0]["text"], "<html>card</html>")
             self.assertEqual(s.call_raw("resources/list", {})["result"]["resources"][0]["uri"], "ui://clickup/task-card.html")
-            self.assertIn("error", s.call_raw("prompts/list", {}))        # upstream's own error passes through
+            self.assertEqual(s.call_raw("prompts/list", {})["result"], {"prompts": []})   # upstream has no prompts
         finally: s.close()
 
     def test_resources_list_before_ready_is_empty_not_an_error(self):

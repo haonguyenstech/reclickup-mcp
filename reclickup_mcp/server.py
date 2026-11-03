@@ -542,8 +542,10 @@ def forward(method, params):
         if UP.dead(): UP.restart()
         raise RuntimeError(f"official ClickUp MCP not connected yet; {UP.state()}")
     try: return UP.request(method, params, timeout=CALL_BUDGET / 2)
-    except RuntimeError as e:                 # resources/prompts are reads: one more try after a network blip
-        if not is_transient(e): raise
+    except RuntimeError as e:
+        if method.endswith("/list") and "not found" in str(e).lower():   # the official server has no prompts
+            return {{"resources/templates/list": "resourceTemplates"}.get(method, method.split("/")[0]): []}
+        if not is_transient(e): raise         # resources/prompts are reads: one more try after a network blip
         time.sleep(1.5); return UP.request(method, params, timeout=CALL_BUDGET / 2)
 
 

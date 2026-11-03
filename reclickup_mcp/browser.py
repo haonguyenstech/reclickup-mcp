@@ -138,10 +138,11 @@ def import_session(from_real_edge=False):
 
 def launch(headless=True, url="about:blank"):
     os.makedirs(PROFILE, exist_ok=True)
-    args = [EDGE] + (["--headless=new"] if headless else []) + [
-        f"--remote-debugging-port={PORT}", f"--user-data-dir={PROFILE}", f"--user-agent={UA}",
-        "--disable-blink-features=AutomationControlled", "--window-size=1600,1000", "--no-first-run",
-        "--no-default-browser-check", "--disable-extensions", url]
+    # The visible sign-in window gets no automation flags: Edge shows a yellow "unsupported command-line flag"
+    # warning for --disable-blink-features, and the user types their own password there anyway.
+    hidden = ["--headless=new", f"--user-agent={UA}", "--disable-blink-features=AutomationControlled"] if headless else []
+    args = [EDGE] + hidden + [f"--remote-debugging-port={PORT}", f"--user-data-dir={PROFILE}", "--window-size=1600,1000",
+                              "--no-first-run", "--no-default-browser-check", "--disable-extensions", url]
     kw = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
     if IS_WIN: kw["creationflags"] = 0x00000008 | 0x00000200   # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
     else: kw["start_new_session"] = True
