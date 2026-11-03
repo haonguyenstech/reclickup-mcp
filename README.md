@@ -208,6 +208,19 @@ The tests need no ClickUp account: `tests/fake_upstream.py` stands in for the of
 slow, flaky, Vietnamese text). CI runs them on Linux, macOS and Windows. `skills/clickup-user-story/scripts/` holds
 copies of `md2delta.py` and `delta2doc.py`; a test fails if they drift from the package.
 
+## Troubleshooting
+
+**Claude says it has no tool to create, update or get a task.** Claude Desktop may have switched off the official
+tools that come with an MCP Apps view (`clickup_create_task`, `clickup_get_task`, `clickup_update_task`,
+`clickup_filter_tasks`, `clickup_search`, the timers): `main.log` shows `Filtering out disabled tool "clickup_create_task"`.
+reclickup lists those tools without the view since 0a1f140, but a switch already stored stays off. Quit Claude Desktop, then:
+
+```bash
+curl -fsSL -o enable_desktop_tools.py https://raw.githubusercontent.com/haonguyenstech/reclickup-mcp/master/tools/enable_desktop_tools.py
+python enable_desktop_tools.py            # shows what is switched off
+python enable_desktop_tools.py --apply    # switches it back on
+```
+
 ## Caveats
 
 - `clickup_doc_write` relies on how ClickUp's web editor handles a paste, not on a public API.
