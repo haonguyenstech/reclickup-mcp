@@ -221,6 +221,8 @@ def write_out(obj):
         sys.stdout.write(json.dumps(obj) + "\n"); sys.stdout.flush()
 
 
+CALL_BUDGET = int(os.environ.get("RECLICKUP_CALL_BUDGET", "50"))   # Claude Desktop/Cowork give up on a call after ~60 s
+
 KNOWN_CACHE = os.path.join(os.path.expanduser("~"), ".reclickup", "official_tools.json")
 KNOWN_BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "official_tools.json")
 
@@ -257,6 +259,31 @@ class Upstream:
     def start(self):
         threading.Thread(target=self._boot, daemon=True).start()
 
+    def dead(self):
+        return self.ready.is_set() and (self.error is not None or not self.proc or self.proc.poll() is not None)
+
+    def restart(self):
+        """The official server exited (sign-in timed out, network drop...): start a fresh one."""
+        try:
+            if self.proc and self.proc.poll() is None: self.proc.terminate()
+        except Exception: pass
+        self.proc = None; self.pending = {}; self.error = None; self.ready = threading.Event()
+        self.start()
+
+    def state(self):
+        """One line on what the official server is doing, from the tail of its log (no tokens or URLs)."""
+        try:
+            with open(os.path.join(os.path.expanduser("~"), ".reclickup", "upstream.log"), "rb") as f:
+                f.seek(0, 2); f.seek(max(0, f.tell() - 6000)); tail = f.read().decode("utf-8", "replace").lower()
+        except Exception: tail = ""
+        waiting = ("waiting for authorization", "to authorize this client", "running the sign-in for this server",
+                   "sign-in for this server is already under way", "could not open a browser")
+        last = max([tail.rfind(w) for w in waiting])
+        if last >= 0 and tail.rfind("proxy established") < last:
+            return ("it is waiting for the ClickUp sign-in: in the browser page that opened, pick the workspace and "
+                    "click Connect Workspace")
+        return "it is still starting (the first start downloads mcp-remote)"
+
     def _boot(self):
         try:
             logdir = os.path.join(os.path.expanduser("~"), ".reclickup"); os.makedirs(logdir, exist_ok=True)
@@ -290,6 +317,9 @@ class Upstream:
             elif m.get("method") == "notifications/tools/list_changed":
                 threading.Thread(target=self._refresh, daemon=True).start()
         self.error = self.error or "official ClickUp MCP process exited (see ~/.reclickup/upstream.log)"
+        for ev, box in list(self.pending.values()):      # fail waiting requests now instead of at their timeout
+            box["error"] = {"message": self.error}; ev.set()
+        self.pending.clear()
 
     def _refresh(self):
         try:
@@ -324,8 +354,9 @@ RELOGIN_TOOL = {
     "description": ("Refresh the ClickUp session of reclickup's private headless browser (used by clickup_doc_write). "
                     "macOS: copies the clickup.com cookies from the user's real Microsoft Edge (a Keychain prompt "
                     "'Microsoft Edge Safe Storage' may appear - the user must click Allow). Windows: opens an Edge window "
-                    "at the ClickUp login; the user signs in once (waits up to 5 minutes). Use on first use or when "
-                    "clickup_doc_write reports NOT_LOGGED_IN."),
+                    "at the ClickUp login and waits about 40 s for the user to sign in; if it returns LOGIN_PENDING, the "
+                    "window is still open: ask the user to sign in there, then call clickup_relogin again. Use on first "
+                    "use or when clickup_doc_write reports NOT_LOGGED_IN."),
     "inputSchema": {"type": "object", "properties": {}},
 }
 
@@ -351,14 +382,18 @@ def handle(msg):
             except Exception as e:
                 return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
         if p.get("name") != TOOL["name"]:
-            UP.ready.wait(300)            # first call may be waiting for the user to approve OAuth in the browser
+            # Answer within CALL_BUDGET: the client drops a call after ~60 s and then cannot tell whether it ran.
+            deadline = time.time() + CALL_BUDGET
+            if UP.dead(): UP.restart()
+            UP.ready.wait(max(1, CALL_BUDGET - 20))
             if not UP.ready.is_set():
-                return {"content": [{"type": "text", "text": "The official ClickUp MCP is waiting for sign-in: approve "
-                         "the ClickUp page that opened in the browser (Connect Workspace), then call this tool again."}],
-                        "isError": True}
-            if UP.error and not UP.tools:
-                return {"content": [{"type": "text", "text": f"Official ClickUp MCP unavailable: {UP.error}"}], "isError": True}
-            try: return UP.request("tools/call", p, timeout=300)
+                return {"content": [{"type": "text", "text": f"NOT_READY: the official ClickUp MCP is not connected yet; "
+                         f"{UP.state()}. Nothing was sent to ClickUp, so calling this tool again is safe."}], "isError": True}
+            if UP.error:
+                err = UP.error; UP.restart()
+                return {"content": [{"type": "text", "text": f"NOT_READY: the official ClickUp MCP stopped ({err}). It is "
+                         "restarting now; nothing was sent to ClickUp, so call this tool again in a few seconds."}], "isError": True}
+            try: return UP.request("tools/call", p, timeout=max(5, deadline - time.time()))
             except Exception as e: return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
         try:
             title = a.get("title")

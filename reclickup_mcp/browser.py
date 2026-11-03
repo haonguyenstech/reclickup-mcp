@@ -16,7 +16,7 @@ PORT = int(os.environ.get("RECLICKUP_PORT", "9335"))
 CDP = f"http://127.0.0.1:{PORT}"
 PROFILE = os.path.join(os.path.expanduser("~"), ".reclickup", "headless-profile")
 IDLE_STOP = int(os.environ.get("RECLICKUP_IDLE_STOP", "600"))
-LOGIN_TIMEOUT = 300
+LOGIN_WAIT = int(os.environ.get("RECLICKUP_LOGIN_WAIT", "40"))   # one call must answer well inside the client's ~60 s
 AUTH = "cu_jwt"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36 Edg/154.0.0.0"
       if IS_WIN else
@@ -191,17 +191,30 @@ def ensure():
     return CDP
 
 
+_login = {"window": False}
+
+
 def relogin():
-    """Refresh the session. macOS: copy from the real Edge profile (freshest). Windows: sign in once in a window."""
+    """Refresh the session. macOS: copy from the real Edge profile (freshest). Windows: sign in once in a window.
+
+    On Windows a call waits at most LOGIN_WAIT s. If the user has not signed in by then, the window stays open and
+    LOGIN_PENDING is raised: calling relogin() again picks up the sign-in once it is done."""
     hold()
     if IS_WIN:
-        stop(); launch(headless=False, url="https://app.clickup.com/login")
-        end = time.time() + LOGIN_TIMEOUT
-        while not logged_in(browser_cookies()):
-            if time.time() > end: stop(); raise RuntimeError(f"NOT_LOGGED_IN: no ClickUp sign-in within {LOGIN_TIMEOUT}s")
-            if not alive(): raise RuntimeError("NOT_LOGGED_IN: the sign-in window was closed before ClickUp signed in")
+        if not (_login["window"] and alive()):
+            stop(); launch(headless=False, url="https://app.clickup.com/login"); _login["window"] = True
+        end = time.time() + LOGIN_WAIT
+        while True:
+            if not alive():
+                _login["window"] = False
+                raise RuntimeError("NOT_LOGGED_IN: the sign-in window was closed before ClickUp signed in")
+            if logged_in(browser_cookies()): break
+            if time.time() > end:
+                touch()          # the window closes itself after the idle timeout if nobody signs in
+                raise RuntimeError("LOGIN_PENDING: an Edge window is open at the ClickUp login. Ask the user to sign "
+                                   "in there, then call clickup_relogin again.")
             time.sleep(1)
-        time.sleep(2); stop(); launch()
+        time.sleep(2); stop(); _login["window"] = False; launch()
         n = len([c for c in browser_cookies() if is_clickup(c)])
     else:
         if not alive(): launch()

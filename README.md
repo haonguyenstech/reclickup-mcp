@@ -140,6 +140,8 @@ The skill reads the workspace from the link, or asks which list or Doc to use.
 | `RECLICKUP_IDLE_STOP` | `600` | Seconds of inactivity before the headless Edge is closed |
 | `RECLICKUP_BROWSER` | auto | Path to the Edge executable |
 | `RECLICKUP_EDGE_PROFILE` | `~/Library/Application Support/Microsoft Edge/Default` | Real Edge profile to copy the session from (macOS) |
+| `RECLICKUP_CALL_BUDGET` | `50` | Seconds a call to an official tool may take before it answers `NOT_READY` (clients drop calls after ~60 s) |
+| `RECLICKUP_LOGIN_WAIT` | `40` | Windows: seconds `clickup_relogin` waits for the sign-in before answering `LOGIN_PENDING` |
 | `RECLICKUP_NPX` | `npx` on `PATH` | `npx` to run `mcp-remote` |
 | `RECLICKUP_UPSTREAM` | `https://mcp.clickup.com/mcp` | Upstream MCP URL |
 
