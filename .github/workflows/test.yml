@@ -12,8 +12,6 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python }}
-      - run: python -m pip install websocket-client
-      - run: python -m unittest discover -s tests -v
+      # uv downloads the Python build itself: setup-python has no 3.9 for the newest Ubuntu image
+      - uses: astral-sh/setup-uv@v6
+      - run: uv run --no-project --python ${{ matrix.python }} --with websocket-client python -m unittest discover -s tests -v
