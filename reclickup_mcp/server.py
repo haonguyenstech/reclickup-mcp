@@ -7,7 +7,7 @@ editor, however, accepts a paste whose text/html carries each table as
 in reclickup's own headless Edge (browser.py, CDP :9335, session copied once), fires that paste, reloads,
 verifies widths/colours, and closes the tab. Nothing for the user to copy.
 """
-import json, os, subprocess, sys, time, urllib.parse, urllib.request
+import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import websocket                      # websocket-client
@@ -16,6 +16,16 @@ from delta2doc import convert
 
 import browser
 CDP = browser.CDP     # private headless Edge (see browser.py), not the user's debug Edge
+
+
+def _version():
+    try:
+        txt = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "__init__.py"), encoding="utf-8").read()
+        return re.search(r'__version__\s*=\s*"([^"]+)"', txt).group(1)
+    except Exception: return "0"
+
+
+VERSION = _version()
 
 PASTE_JS = r"""
 (async () => {
@@ -52,18 +62,24 @@ VERIFY_JS = r"""
 
 
 class Tab:
-    """A CDP session on one page target."""
+    """A CDP session on one page target. A call that gets no answer in 10 s (page busy loading) raises
+    RuntimeError("PAGE_BUSY ...") instead of blocking past the call's deadline."""
     def __init__(self, ws_url):
-        self.ws = websocket.create_connection(ws_url, suppress_origin=True, timeout=60); self.n = 0
+        self.ws = websocket.create_connection(ws_url, suppress_origin=True, timeout=10); self.n = 0
     def call(self, method, params=None):
         self.n += 1; self.ws.send(json.dumps({"id": self.n, "method": method, "params": params or {}}))
         while True:
-            m = json.loads(self.ws.recv())
+            try: m = json.loads(self.ws.recv())
+            except websocket.WebSocketTimeoutException:
+                raise RuntimeError(f"PAGE_BUSY: no answer to {method} in 10 s")
             if m.get("id") == self.n:
                 if "error" in m: raise RuntimeError(f"{method}: {m['error']}")
                 return m.get("result", {})
     def eval(self, expr):
         r = self.call("Runtime.evaluate", {"expression": expr, "awaitPromise": True, "returnByValue": True})
+        if r.get("exceptionDetails"):
+            d = r["exceptionDetails"]
+            raise RuntimeError("page script failed: " + str((d.get("exception") or {}).get("description") or d.get("text"))[:300])
         return r.get("result", {}).get("value")
     def close(self):
         try: self.ws.close()
@@ -75,18 +91,32 @@ def cdp_json(path, method="GET"):
     return json.load(urllib.request.urlopen(req, timeout=5))
 
 
-def wait_editor(tab, secs=40):
-    end = time.time() + secs; reloaded = False
-    while time.time() < end:
-        st = tab.eval("JSON.stringify({u: location.href, n: document.querySelectorAll('.ql-editor').length})")
-        st = json.loads(st or "{}")
+def left(deadline):
+    return deadline - time.time()
+
+
+def wait_editor(tab, deadline, settle=2.0):
+    """Wait for the Doc editor, then let it settle: a paste straight after the editor appears is ignored
+    (NOT_HANDLED) because ClickUp attaches its handlers a moment later."""
+    reloaded = False; start = time.time(); last = None
+    while left(deadline) > 0:
+        try: st = json.loads(tab.eval("JSON.stringify({u: location.href, n: document.querySelectorAll('.ql-editor').length, "
+                                      "c: ((document.querySelector('.ql-editor') || {}).innerText || '').length})") or "{}")
+        except RuntimeError: st = {}                       # page navigating
         if "/login" in st.get("u", ""):
             raise RuntimeError("NOT_LOGGED_IN: the ClickUp session in reclickup's browser expired - run clickup_relogin.")
-        if st.get("n"): time.sleep(1.5); return
-        if not reloaded and time.time() > end - secs / 2:
+        if st.get("n"):
+            if last is not None and st.get("c") == last:   # content stopped changing: loaded
+                time.sleep(max(0.0, min(settle, left(deadline)))); return
+            last = st.get("c")
+        elif not reloaded and time.time() - start > 20:
             tab.call("Page.reload"); reloaded = True
-        time.sleep(1.5)
-    raise RuntimeError("The Doc editor never loaded (wrong link, no access, or signed out).")
+        time.sleep(0.7)
+    raise RuntimeError(TIMEOUT_MSG)
+
+
+TIMEOUT_MSG = ("TIMEOUT: the Doc page did not finish loading in time (ClickUp slow, wrong link, or no access). "
+               "Nothing was pasted; check the link and call clickup_doc_write again.")
 
 
 def trusted_click(tab, x, y):
@@ -127,27 +157,27 @@ def click_editor(tab):
     raise RuntimeError("Could not reach the Doc body (empty-page chooser did not open the editor).")
 
 
-def write_doc(page_url, delta, append=False, title=None):
+def write_doc(page_url, delta, append=False, title=None, deadline=None):
+    """Whole job inside `deadline` (the client drops a call after ~60 s) and inside the shared browser lock."""
+    deadline = deadline or time.time() + CALL_BUDGET
     if "/v/dc/" not in page_url and "/docs/" not in page_url:
         raise RuntimeError("page_url must be a ClickUp Doc page link (contains /v/dc/ or /docs/).")
     html = convert(delta["ops"] if isinstance(delta, dict) else delta)
-    try:
-        browser.ensure()
-        return _write_doc(page_url, html, append, title)
-    except RuntimeError as e:
-        if "NOT_LOGGED_IN" not in str(e): raise
-        browser.import_session(from_real_edge=not browser.IS_WIN)   # stale copy: refresh once, retry
-        return _write_doc(page_url, html, append, title)
-    finally:
-        browser.touch()
+    with browser.job(timeout=min(15, left(deadline) - 30)):
+        try:
+            browser.ensure()
+            return _write_doc(page_url, html, append, title, deadline)
+        except RuntimeError as e:
+            if "NOT_LOGGED_IN" not in str(e) or left(deadline) < 25: raise
+            browser.import_session(from_real_edge=not browser.IS_WIN)   # stale copy: refresh once, retry
+            return _write_doc(page_url, html, append, title, deadline)
 
 
-def _write_doc(page_url, html, append, title):
+def _write_doc(page_url, html, append, title, deadline):
     target = None
     for _ in range(3):
         try:
-            t = cdp_json("/json/new?" + urllib.parse.quote("about:blank", safe=""), method="PUT")
-            target = t; break
+            target = cdp_json("/json/new?" + urllib.parse.quote("about:blank", safe=""), method="PUT"); break
         except Exception: time.sleep(1)
     if not target: raise RuntimeError("Could not open a tab in reclickup's headless Edge.")
     tab = Tab(target["webSocketDebuggerUrl"])
@@ -155,14 +185,30 @@ def _write_doc(page_url, html, append, title):
         tab.call("Page.enable"); tab.call("Runtime.enable")
         tab.call("Emulation.setDeviceMetricsOverride", {"width": 1600, "height": 1000, "deviceScaleFactor": 1, "mobile": False})
         tab.call("Emulation.setFocusEmulationEnabled", {"enabled": True})
-        tab.call("Page.navigate", {"url": page_url})
-        time.sleep(4); wait_editor(tab)
+        try: tab.call("Page.navigate", {"url": page_url})
+        except RuntimeError as e:                          # slow network: navigation still going, wait_editor follows it
+            if "PAGE_BUSY" not in str(e): raise
+        time.sleep(1)
+        wait_editor(tab, deadline - 18)                    # keep ~18 s for paste, save and the read-back
         titled = set_title_if_untitled(tab, title)
-        click_editor(tab)
-        res = tab.eval(PASTE_JS.replace("__HTML__", json.dumps(html)).replace("__APPEND__", "true" if append else "false"))
-        if res != "PASTED": raise RuntimeError(f"Paste was not accepted by the editor ({res}).")
-        time.sleep(6)                                     # let ClickUp sync the change
-        tab.call("Page.reload"); time.sleep(4); wait_editor(tab); time.sleep(2)
+        js = PASTE_JS.replace("__HTML__", json.dumps(html)).replace("__APPEND__", "true" if append else "false")
+        for attempt in range(6):
+            # NOT_HANDLED = the editor's paste handler is not attached yet (ClickUp still loading): nothing changed,
+            # so wait and paste again.
+            click_editor(tab)
+            res = tab.eval(js)
+            if res == "PASTED" or left(deadline) < 16: break
+            time.sleep(1.5)
+        if res != "PASTED": raise RuntimeError(f"TIMEOUT: the editor did not accept the paste in time ({res}); nothing was changed.")
+        time.sleep(SAVE_WAIT)                              # let ClickUp sync the change before reloading
+        try: tab.call("Page.reload")
+        except RuntimeError as e:
+            if "PAGE_BUSY" not in str(e): raise
+        time.sleep(1)
+        try: wait_editor(tab, deadline, settle=0.5)
+        except RuntimeError as e:
+            if "TIMEOUT" not in str(e): raise
+            return {"chars": 0, "tables": [], "titled": titled, "unverified": True}
         v = json.loads(tab.eval(VERIFY_JS)); v["titled"] = titled; return v
     finally:
         tab.close()
@@ -170,7 +216,13 @@ def _write_doc(page_url, html, append, title):
         except Exception: pass
 
 
+SAVE_WAIT = float(os.environ.get("RECLICKUP_SAVE_WAIT", "4"))   # 2 s already persisted in a test; 4 s leaves margin
+
+
 def summary(v, append):
+    if v.get("unverified"):
+        return (f"{'Appended to' if append else 'Replaced'} the Doc page, but it did not reload in time to read the "
+                "result back. Open the page to check it; do not write again before checking.")
     lines = [f"{'Appended to' if append else 'Replaced'} the Doc page. After reload: {len(v['tables'])} tables, {v['chars']} chars." + (" Page was untitled - title set." if v.get("titled") else "")]
     bad = 0
     for i, t in enumerate(v["tables"], 1):
@@ -216,12 +268,28 @@ UPSTREAM_CMD = [NPX, "-y", "mcp-remote@0.15.1", UPSTREAM_URL]
 OUT_LOCK = threading.Lock()
 
 
+def kill_tree(proc):
+    """Stop the upstream and its children. On Windows npx.cmd runs node as a child of cmd.exe, and terminate()
+    would only stop cmd.exe, leaving mcp-remote running."""
+    if not proc or proc.poll() is not None: return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=10)
+        else: proc.terminate()
+    except Exception:
+        try: proc.kill()
+        except Exception: pass
+
+
 def write_out(obj):
     with OUT_LOCK:
         sys.stdout.write(json.dumps(obj) + "\n"); sys.stdout.flush()
 
 
 CALL_BUDGET = int(os.environ.get("RECLICKUP_CALL_BUDGET", "50"))   # Claude Desktop/Cowork give up on a call after ~60 s
+LOG_MAX = 2_000_000
+READY_WAIT = max(min(5, CALL_BUDGET / 2), CALL_BUDGET - 20)   # how long a call waits for the upstream to connect
 
 KNOWN_CACHE = os.path.join(os.path.expanduser("~"), ".reclickup", "official_tools.json")
 KNOWN_BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "official_tools.json")
@@ -230,9 +298,9 @@ KNOWN_BUNDLED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "offici
 def load_known_tools():
     """Official tools from the last live listing (or the snapshot shipped with the package).
 
-    Claude Desktop lists tools once per server start and ignores tools/list_changed. On a first run
-    the official server is still waiting for OAuth when that happens, so without this list Claude
-    only ever saw clickup_doc_write / clickup_relogin and told users it could not create tasks."""
+    While the official server is still connecting (first run waiting for OAuth, slow start, sign-in never
+    approved) Claude would otherwise see only clickup_doc_write / clickup_relogin and tell users it cannot
+    create tasks. tools/list_changed follows once the live list arrives."""
     for path in (KNOWN_CACHE, KNOWN_BUNDLED):
         try:
             with open(path, encoding="utf-8") as f:
@@ -253,20 +321,21 @@ def save_known_tools(tools):
 class Upstream:
     def __init__(self):
         self.proc = None; self.n = 0; self.pending = {}; self.lock = threading.Lock()
-        self.ready = threading.Event(); self.error = None; self.tools = []
+        self.ready = threading.Event(); self.error = None; self.tools = []; self.gen = 0; self.started = 0.0
+        self.log = None
         self.known = load_known_tools()   # listed until the live upstream answers (see tools/list)
 
     def start(self):
-        threading.Thread(target=self._boot, daemon=True).start()
+        self.gen += 1; self.started = time.time()
+        threading.Thread(target=self._boot, args=(self.gen, self.ready), daemon=True).start()
 
     def dead(self):
         return self.ready.is_set() and (self.error is not None or not self.proc or self.proc.poll() is not None)
 
     def restart(self):
-        """The official server exited (sign-in timed out, network drop...): start a fresh one."""
-        try:
-            if self.proc and self.proc.poll() is None: self.proc.terminate()
-        except Exception: pass
+        """The official server exited or stopped answering (sign-in timed out, network drop...): start a fresh one."""
+        if not self.ready.is_set() and time.time() - self.started < 10: return     # a fresh one is already starting
+        kill_tree(self.proc)
         self.proc = None; self.pending = {}; self.error = None; self.ready = threading.Event()
         self.start()
 
@@ -277,22 +346,37 @@ class Upstream:
                 f.seek(0, 2); f.seek(max(0, f.tell() - 6000)); tail = f.read().decode("utf-8", "replace").lower()
         except Exception: tail = ""
         waiting = ("waiting for authorization", "to authorize this client", "running the sign-in for this server",
-                   "sign-in for this server is already under way", "could not open a browser")
+                   "sign-in for this server is already under way", "could not open a browser",
+                   "requires authorization, completing sign-in")
         last = max([tail.rfind(w) for w in waiting])
-        if last >= 0 and tail.rfind("proxy established") < last:
+        done = max(tail.rfind("proxy established"), tail.rfind("re-authorized with the remote server"))
+        if last >= 0 and done < last:
             return ("it is waiting for the ClickUp sign-in: in the browser page that opened, pick the workspace and "
                     "click Connect Workspace")
         return "it is still starting (the first start downloads mcp-remote)"
 
-    def _boot(self):
+    def _boot(self, gen, ready):
         try:
             logdir = os.path.join(os.path.expanduser("~"), ".reclickup"); os.makedirs(logdir, exist_ok=True)
-            log = open(os.path.join(logdir, "upstream.log"), "a")
-            self.proc = subprocess.Popen(UPSTREAM_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
-                                         text=True, bufsize=1)
-            threading.Thread(target=self._read, daemon=True).start()
+            path = os.path.join(logdir, "upstream.log")
+            try:                                   # mcp-remote logs every message: keep the file small
+                if os.path.getsize(path) > LOG_MAX: os.replace(path, path + ".1")
+            except OSError: pass                   # missing, or held open by another copy on Windows
+            log = open(path, "a", encoding="utf-8")
+            if gen != self.gen: log.close(); return
+            old, self.log = self.log, log
+            if old:
+                try: old.close()
+                except Exception: pass
+            # UTF-8 explicitly: on Windows the default is cp1252, which cannot decode some Vietnamese characters
+            # (e.g. "ờ" = E1 BB 9D) - the reader thread died on them and every later call timed out.
+            proc = subprocess.Popen(UPSTREAM_CMD, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log,
+                                    text=True, encoding="utf-8", errors="replace", bufsize=1)
+            if gen != self.gen: kill_tree(proc); return
+            self.proc = proc
+            threading.Thread(target=self._read, args=(proc, gen), daemon=True).start()
             self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                                        "clientInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}, timeout=300)
+                                        "clientInfo": {"name": "reclickup-mcp", "version": VERSION}}, timeout=300)
             self.notify("notifications/initialized")
             self.tools = self.request("tools/list", {}, timeout=120).get("tools", [])
             save_known_tools(self.tools)
@@ -300,12 +384,15 @@ class Upstream:
             # in the browser): tell it to list again.
             write_out({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
         except Exception as e:
-            self.error = str(e)
+            if gen == self.gen: self.error = str(e)
         finally:
-            self.ready.set()
+            ready.set()
 
-    def _read(self):
-        for line in self.proc.stdout:
+    def _read(self, proc, gen):
+        while True:
+            try: line = proc.stdout.readline()
+            except Exception: continue                      # never let one bad line kill the reader
+            if not line: break
             try: m = json.loads(line)
             except Exception: continue
             if "id" in m and ("result" in m or "error" in m):
@@ -316,6 +403,10 @@ class Upstream:
                            {"jsonrpc": "2.0", "id": m["id"], "error": {"code": -32601, "message": "not supported"}})
             elif m.get("method") == "notifications/tools/list_changed":
                 threading.Thread(target=self._refresh, daemon=True).start()
+            elif m.get("method") in ("notifications/resources/list_changed", "notifications/resources/updated",
+                                     "notifications/prompts/list_changed"):
+                write_out(m)
+        if gen != self.gen: return                       # an old process we replaced: leave the new one alone
         self.error = self.error or "official ClickUp MCP process exited (see ~/.reclickup/upstream.log)"
         for ev, box in list(self.pending.values()):      # fail waiting requests now instead of at their timeout
             box["error"] = {"message": self.error}; ev.set()
@@ -335,15 +426,29 @@ class Upstream:
     def notify(self, method, params=None):
         self._send({"jsonrpc": "2.0", "method": method, **({"params": params} if params else {})})
 
-    def request(self, method, params, timeout=180):
+    def send(self, method, params):
+        """Send a request without waiting: returns (id, event, box); the reader fills box and sets event."""
         with self.lock: self.n += 1; i = self.n
         ev, box = threading.Event(), {}
         self.pending[i] = (ev, box)
         self._send({"jsonrpc": "2.0", "id": i, "method": method, "params": params})
-        if not ev.wait(timeout):
-            self.pending.pop(i, None); raise RuntimeError(f"official ClickUp MCP timed out on {method}")
+        return i, ev, box
+
+    @staticmethod
+    def result(box):
         if "error" in box: raise RuntimeError(box["error"].get("message", str(box["error"])))
         return box["result"]
+
+    def request(self, method, params, timeout=180):
+        i, ev, box = self.send(method, params)
+        if not ev.wait(timeout):
+            self.pending.pop(i, None); raise RuntimeError(f"official ClickUp MCP timed out on {method}")
+        return self.result(box)
+
+    def responsive(self, timeout=8):
+        """True if the remote ClickUp server still answers (mcp-remote forwards ping upstream)."""
+        try: self.request("ping", {}, timeout=timeout); return True
+        except Exception: return False
 
 
 UP = Upstream()
@@ -361,11 +466,78 @@ RELOGIN_TOOL = {
 }
 
 
+SLOW_CALL = int(os.environ.get("RECLICKUP_SLOW_CALL", "20"))   # then check that the connection to ClickUp still answers
+
+
+def stale(note):
+    return {"content": [{"type": "text", "text": "STALE_CONNECTION: " + note + " reclickup restarted it, so call the tool "
+             "again now. If this was a write (create/update/delete), first check whether it already happened."}],
+            "isError": True}
+
+
+def call_upstream(p, deadline):
+    """Forward a tools/call. A connection that stopped answering (VPN reconnect, dropped session...) makes every
+    later call hang too, so detect it with a ping and restart mcp-remote instead of timing out call after call."""
+    try: i, ev, box = UP.send("tools/call", {k: v for k, v in p.items() if k != "_retried"})
+    except Exception as e:
+        UP.restart(); return stale(f"the connection to ClickUp was broken ({e}).")
+    if not ev.wait(max(1, min(SLOW_CALL, deadline - time.time()))):
+        if not UP.responsive(timeout=min(8, max(2, deadline - time.time() - 2))):
+            UP.pending.pop(i, None)
+            if UP.state().startswith("it is waiting for the ClickUp sign-in"):
+                return {"content": [{"type": "text", "text": f"NOT_READY: ClickUp asked to sign in again; {UP.state()}. "
+                         "Then call this tool again."}], "isError": True}
+            UP.restart()
+            return stale("the connection to ClickUp had stopped answering (a network or VPN change, or an expired session).")
+        if not ev.wait(max(1, deadline - time.time())):
+            UP.pending.pop(i, None); UP.restart()
+            return stale(f"ClickUp did not answer {p.get('name')} within {CALL_BUDGET} s.")
+    try: return UP.result(box)
+    except Exception as e:
+        # A network blip ("fetch failed", reset, timeout) on a read-only tool is safe to try once more.
+        if is_transient(e) and read_only(p.get("name")) and deadline - time.time() > 10 and not p.get("_retried"):
+            time.sleep(1.5)
+            return call_upstream(dict(p, _retried=True), deadline)
+        return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
+
+
+TRANSIENT = ("fetch failed", "econnreset", "etimedout", "socket hang up", "network", "eai_again", "503", "502")
+
+
+def is_transient(e):
+    return any(w in str(e).lower() for w in TRANSIENT)
+
+
+def read_only(name):
+    for t in UP.tools or UP.known:
+        if t.get("name") == name: return bool((t.get("annotations") or {}).get("readOnlyHint"))
+    return False
+
+
+# Methods that belong to the official server: its MCP Apps UIs (ui://clickup/task-card.html for
+# clickup_get_task, task-table for clickup_filter_tasks, timers...) are fetched by the client with resources/read.
+FORWARDED = {"resources", "prompts", "completion"}
+
+
+def forward(method, params):
+    UP.ready.wait(READY_WAIT)
+    if not UP.ready.is_set() or UP.error:
+        if method.endswith("/list"):                                   # nothing yet; list_changed follows later
+            return {{"resources/templates/list": "resourceTemplates"}.get(method, method.split("/")[0]): []}
+        if UP.dead(): UP.restart()
+        raise RuntimeError(f"official ClickUp MCP not connected yet; {UP.state()}")
+    try: return UP.request(method, params, timeout=CALL_BUDGET / 2)
+    except RuntimeError as e:                 # resources/prompts are reads: one more try after a network blip
+        if not is_transient(e): raise
+        time.sleep(1.5); return UP.request(method, params, timeout=CALL_BUDGET / 2)
+
+
 def handle(msg):
     m, mid = msg.get("method"), msg.get("id")
     if m == "initialize":
         return {"protocolVersion": msg.get("params", {}).get("protocolVersion", "2025-06-18"),
-                "capabilities": {"tools": {"listChanged": True}}, "serverInfo": {"name": "reclickup-mcp", "version": "0.1.0"}}
+                "capabilities": {"tools": {"listChanged": True}, "resources": {"listChanged": True}, "prompts": {"listChanged": True}},
+                "serverInfo": {"name": "reclickup-mcp", "version": VERSION}}
     if m == "tools/list":
         # Don't hold the client for long: on a first run the official server waits for OAuth in the
         # browser. Our tools are listed now; tools/list_changed follows once the official ones arrive.
@@ -377,7 +549,7 @@ def handle(msg):
         p = msg["params"]; a = p.get("arguments") or {}
         if p.get("name") == RELOGIN_TOOL["name"]:
             try:
-                n = browser.relogin()
+                with browser.job(timeout=8): n = browser.relogin()
                 return {"content": [{"type": "text", "text": f"ClickUp session refreshed in reclickup's headless browser ({n} cookies)."}]}
             except Exception as e:
                 return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
@@ -385,7 +557,7 @@ def handle(msg):
             # Answer within CALL_BUDGET: the client drops a call after ~60 s and then cannot tell whether it ran.
             deadline = time.time() + CALL_BUDGET
             if UP.dead(): UP.restart()
-            UP.ready.wait(max(1, CALL_BUDGET - 20))
+            UP.ready.wait(READY_WAIT)
             if not UP.ready.is_set():
                 return {"content": [{"type": "text", "text": f"NOT_READY: the official ClickUp MCP is not connected yet; "
                          f"{UP.state()}. Nothing was sent to ClickUp, so calling this tool again is safe."}], "isError": True}
@@ -393,8 +565,8 @@ def handle(msg):
                 err = UP.error; UP.restart()
                 return {"content": [{"type": "text", "text": f"NOT_READY: the official ClickUp MCP stopped ({err}). It is "
                          "restarting now; nothing was sent to ClickUp, so call this tool again in a few seconds."}], "isError": True}
-            try: return UP.request("tools/call", p, timeout=max(5, deadline - time.time()))
-            except Exception as e: return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
+            return call_upstream(p, deadline)
+        deadline = time.time() + CALL_BUDGET
         try:
             title = a.get("title")
             md = a.get("markdown") or ""
@@ -403,11 +575,13 @@ def handle(msg):
             elif a.get("markdown"): delta = md_to_delta(a["markdown"])
             else: raise RuntimeError("Pass either 'markdown' or 'delta'.")
             append = a.get("mode") == "append"
-            return {"content": [{"type": "text", "text": summary(write_doc(a["page_url"], delta, append, title), append)}]}
+            return {"content": [{"type": "text", "text": summary(write_doc(a["page_url"], delta, append, title, deadline), append)}]}
         except Exception as e:
             return {"content": [{"type": "text", "text": f"Error: {e}"}], "isError": True}
     if m == "ping": return {}
     if mid is None: return None          # notification
+    if m and m.split("/")[0] in FORWARDED:
+        return forward(m, msg.get("params") or {})
     raise KeyError(m)
 
 
@@ -424,23 +598,27 @@ def respond(msg):
 
 
 def shutdown(*_):
-    """Leave nothing running: the headless Edge is detached, so it would outlive this process."""
-    try: browser.stop()
+    """Leave nothing running: the headless Edge is detached, so it would outlive this process. Another reclickup
+    copy may still be using it, so stop it only if nobody is."""
+    try: browser.stop_if_unused()
     except Exception: pass
-    try:
-        if UP.proc: UP.proc.terminate()
-    except Exception: pass
+    kill_tree(UP.proc)
 
 
 def main():
     import atexit, signal
+    # MCP stdio is UTF-8; Windows would otherwise decode the client's Vietnamese text as cp1252.
+    for stream in (sys.stdin, sys.stdout):
+        try: stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception: pass
     atexit.register(shutdown)
     for sig in (signal.SIGTERM, getattr(signal, "SIGHUP", None)):
         if sig is not None: signal.signal(sig, lambda *a: sys.exit(0))
     UP.start()
     for line in sys.stdin:
         if not line.strip(): continue
-        msg = json.loads(line)
+        try: msg = json.loads(line)
+        except Exception: continue
         if msg.get("method") == "initialize": respond(msg)          # in order
         else: threading.Thread(target=respond, args=(msg,), daemon=True).start()
 

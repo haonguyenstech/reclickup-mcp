@@ -166,15 +166,112 @@ def stop():
     time.sleep(0.5)        # the profile lock goes a moment after the port
 
 
+# ------------------------------------------------------------------ sharing the browser between processes
+# Claude Desktop starts reclickup more than once (one per window/agent), and every copy drives the SAME Edge
+# (one port, one profile). A job (a Doc write, a relogin) holds the lock file shared by all copies, and the idle
+# stop / shutdown only close Edge when no copy is using it.
+STATE_DIR = os.path.join(os.path.expanduser("~"), ".reclickup")
+LOCK_FILE = os.path.join(STATE_DIR, "browser.lock")
+LAST_FILE = os.path.join(STATE_DIR, "browser.last")      # "<pid> <unix time>" of the last use by any copy
+LOGIN_MARK = os.path.join(STATE_DIR, "login-window")     # exists while Edge runs as the visible sign-in window
+
+
+class FileLock:
+    """Exclusive lock on LOCK_FILE across processes (and threads: each acquire opens its own handle)."""
+    def __init__(self): self.f = None
+    def acquire(self, timeout=0.0):
+        os.makedirs(STATE_DIR, exist_ok=True)
+        end = time.time() + timeout
+        while True:
+            f = open(LOCK_FILE, "a+")
+            try:
+                if IS_WIN:
+                    import msvcrt
+                    f.seek(0); msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                self.f = f; return True
+            except OSError:
+                f.close()
+                if time.time() >= end: return False
+                time.sleep(0.2)
+    def release(self):
+        f, self.f = self.f, None
+        if not f: return
+        try:
+            if IS_WIN:
+                import msvcrt
+                f.seek(0); msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+        except OSError: pass
+        f.close()
+
+
+class Busy(RuntimeError): pass
+
+
+class job:
+    """with browser.job(timeout): one browser job at a time across all reclickup processes."""
+    def __init__(self, timeout): self.timeout = timeout; self.lock = FileLock()
+    def __enter__(self):
+        if not self.lock.acquire(max(0.0, self.timeout)):
+            raise Busy("BUSY: another reclickup job is using the browser right now (a Doc write or a sign-in). "
+                       "Nothing was changed; wait a few seconds and call the tool again.")
+        hold(); return self
+    def __exit__(self, *exc):
+        touch(); self.lock.release()
+
+
+def last_use():
+    try:
+        with open(LAST_FILE) as f: pid, t = f.read().split()
+        return int(pid), float(t)
+    except Exception: return None, 0.0
+
+
+def mark_use():
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(LAST_FILE, "w") as f: f.write(f"{os.getpid()} {time.time()}")
+    except OSError: pass
+
+
 _idle = {"timer": None}
 _lock = threading.Lock()
 
 
-def touch():
-    """(Re)arm the idle timer: the headless Edge stops IDLE_STOP s after the last use."""
+def _arm(delay):
     with _lock:
         if _idle["timer"]: _idle["timer"].cancel()
-        t = threading.Timer(IDLE_STOP, stop); t.daemon = True; t.start(); _idle["timer"] = t
+        t = threading.Timer(max(1.0, delay), _idle_stop); t.daemon = True; t.start(); _idle["timer"] = t
+
+
+def touch():
+    """Record a use and (re)arm the idle timer: Edge stops IDLE_STOP s after the last use by ANY copy."""
+    mark_use(); _arm(IDLE_STOP)
+
+
+def _idle_stop():
+    pid, t = last_use()
+    left = IDLE_STOP - (time.time() - t)
+    if left > 1: _arm(left); return                    # another copy used it since: wait for its idle time
+    lk = FileLock()
+    if not lk.acquire(0): _arm(30); return               # a job is running in some copy
+    try: stop()
+    finally: lk.release()
+
+
+def stop_if_unused():
+    """On exit: close Edge unless another reclickup copy is using it or used it recently."""
+    pid, t = last_use()
+    if pid not in (None, os.getpid()) and time.time() - t < IDLE_STOP: return
+    lk = FileLock()
+    if not lk.acquire(0): return
+    try: stop()
+    finally: lk.release()
 
 
 def hold():
@@ -184,40 +281,41 @@ def hold():
 
 
 def ensure():
-    """Headless Edge up and signed in to ClickUp; returns the CDP base URL. Call touch() when done."""
-    hold()
-    if not alive(): launch()
+    """Headless Edge up and signed in to ClickUp; returns the CDP base URL. Run inside a job()."""
+    if not alive() or os.path.exists(LOGIN_MARK):   # the visible sign-in window is no place for a write
+        if alive(): stop()
+        _clear_login_mark(); launch()
     if not logged_in(browser_cookies()): import_session()
     return CDP
 
 
-_login = {"window": False}
+def _clear_login_mark():
+    try: os.remove(LOGIN_MARK)
+    except OSError: pass
 
 
 def relogin():
     """Refresh the session. macOS: copy from the real Edge profile (freshest). Windows: sign in once in a window.
 
     On Windows a call waits at most LOGIN_WAIT s. If the user has not signed in by then, the window stays open and
-    LOGIN_PENDING is raised: calling relogin() again picks up the sign-in once it is done."""
-    hold()
+    LOGIN_PENDING is raised: calling relogin() again (from any reclickup copy) picks the sign-in up. Run inside a job()."""
     if IS_WIN:
-        if not (_login["window"] and alive()):
-            stop(); launch(headless=False, url="https://app.clickup.com/login"); _login["window"] = True
+        if not (os.path.exists(LOGIN_MARK) and alive()):
+            stop(); launch(headless=False, url="https://app.clickup.com/login")
+            with open(LOGIN_MARK, "w") as f: f.write(str(time.time()))
         end = time.time() + LOGIN_WAIT
         while True:
             if not alive():
-                _login["window"] = False
+                _clear_login_mark()
                 raise RuntimeError("NOT_LOGGED_IN: the sign-in window was closed before ClickUp signed in")
             if logged_in(browser_cookies()): break
-            if time.time() > end:
-                touch()          # the window closes itself after the idle timeout if nobody signs in
+            if time.time() > end:        # the window closes itself after the idle timeout if nobody signs in
                 raise RuntimeError("LOGIN_PENDING: an Edge window is open at the ClickUp login. Ask the user to sign "
                                    "in there, then call clickup_relogin again.")
             time.sleep(1)
-        time.sleep(2); stop(); _login["window"] = False; launch()
+        time.sleep(2); stop(); _clear_login_mark(); launch()
         n = len([c for c in browser_cookies() if is_clickup(c)])
     else:
         if not alive(): launch()
         n = import_session(from_real_edge=True)
-    touch()
     return n

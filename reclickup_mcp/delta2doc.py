@@ -7,9 +7,11 @@ import base64, html, json, sys
 
 def inline(text, a):
     t = html.escape(text, quote=False)
+    if a.get("code"): t = f"<code>{t}</code>"
     if a.get("link"): t = f'<a href="{html.escape(a["link"])}">{t}</a>'
     if a.get("bold"): t = f"<strong>{t}</strong>"
     if a.get("italic"): t = f"<em>{t}</em>"
+    if a.get("strike"): t = f"<s>{t}</s>"
     return t
 
 # A Doc's text column is 720px. A table wider than that gets class ql-table-embed-wide and
@@ -39,12 +41,21 @@ def fit_doc(te):
     for c, x in zip(cols, w): c.setdefault("attributes", {})["width"] = str(x)
     return te
 
+LIST_KINDS = ("bullet", "ordered", "checked", "unchecked")
+
 def convert(ops):
-    out, line = [], []
+    # Lists are written the way ClickUp's editor (Quill 2) stores them: one <ol> whose <li data-list="..."> carry the
+    # kind (bullet / ordered / checked / unchecked), nesting as class ql-indent-N. <ul data-checked> (Quill 1)
+    # pastes as plain bullets.
+    out, line, in_list = [], [], False
+    def close_list():
+        nonlocal in_list
+        if in_list: out.append("</ol>"); in_list = False
     for op in ops:
         ins = op["insert"]
         if isinstance(ins, dict):
             if "table-embed" in ins:
+                close_list()
                 b64 = base64.b64encode(json.dumps(fit_doc(ins["table-embed"]), ensure_ascii=False,
                                                   separators=(",", ":")).encode()).decode()
                 out.append(f'<span class="ql-table-embed" data-table-embed-value="{b64}"></span>')
@@ -55,13 +66,18 @@ def convert(ops):
             if i < len(parts) - 1:   # newline closes the line; a lone "\n" op carries block attrs
                 a = op.get("attributes", {}) if ins == "\n" else {}
                 body = "".join(line) or "<br>"
-                h, lst = a.get("header"), a.get("list")
-                if h: out.append(f"<h{h}>{body}</h{h}>")
-                elif lst in ("bullet", "ordered"):
-                    tag = "ul" if lst == "bullet" else "ol"
-                    out.append(f"<{tag}><li>{body}</li></{tag}>")
-                else: out.append(f"<p>{body}</p>")
+                h, kind = a.get("header"), a.get("list")
+                if kind in LIST_KINDS:
+                    if not in_list: out.append("<ol>"); in_list = True
+                    ind = f' class="ql-indent-{a["indent"]}"' if a.get("indent") else ""
+                    out.append(f'<li data-list="{kind}"{ind}>{body}</li>')
+                else:
+                    close_list()
+                    if h: out.append(f"<h{h}>{body}</h{h}>")
+                    elif a.get("blockquote"): out.append(f"<blockquote>{body}</blockquote>")
+                    else: out.append(f"<p>{body}</p>")
                 line = []
+    close_list()
     if line: out.append(f"<p>{''.join(line)}</p>")
     return "".join(out)
 
@@ -71,20 +87,21 @@ button{font-size:18px;padding:14px 28px;border:0;border-radius:8px;background:#7
 #ok{color:#1a7f37;font-weight:600;margin-left:12px} ol{line-height:1.8}</style></head><body>
 <h2>__TITLE__</h2>
 <p><button id="b">Copy for ClickUp Doc</button><span id="ok"></span></p>
-<ol><li>Bấm nút Copy ở trên.</li><li>Mở trang ClickUp Doc, click vào phần nội dung.</li>
-<li>Thay cả trang: <b>Cmd+A</b> rồi <b>Cmd+V</b>. Chèn vào một chỗ: chỉ <b>Cmd+V</b>.</li></ol>
+<ol><li>Click the Copy button above.</li><li>Open the ClickUp Doc page and click in the body.</li>
+<li>Replace the page: <b>Ctrl/Cmd+A</b> then <b>Ctrl/Cmd+V</b>. Insert at the cursor: just <b>Ctrl/Cmd+V</b>.</li></ol>
 <script>
 const HTML = __HTML__;
 document.getElementById('b').onclick = () => {
   const h = e => { e.clipboardData.setData('text/html', HTML); e.clipboardData.setData('text/plain', ' '); e.preventDefault(); };
   document.addEventListener('copy', h, {once: true});
   const ok = document.execCommand('copy');
-  document.getElementById('ok').textContent = ok ? 'Đã copy - sang Doc bấm Cmd+V' : 'Copy lỗi';
+  document.getElementById('ok').textContent = ok ? 'Copied - now paste in the Doc' : 'Copy failed';
 };
 </script></body></html>"""
 
 if __name__ == "__main__":
-    d = json.load(open(sys.argv[1]))
+    sys.stdout.reconfigure(encoding="utf-8")      # Windows consoles/pipes default to cp1252
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
     frag = convert(d["ops"] if isinstance(d, dict) else d)
     if "--page" in sys.argv:
         title = sys.argv[sys.argv.index("--page") + 1] if len(sys.argv) > sys.argv.index("--page") + 1 else "ClickUp Doc"

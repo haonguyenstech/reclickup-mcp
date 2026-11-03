@@ -55,20 +55,43 @@ no clipboard.
 
 ### Markdown it understands
 
-`# Heading`, paragraphs, `**bold**`, `[links](url)` and pipe tables. Every table gets a bold header
-row with green background cells. A table whose first header cell is `User Story Name` is a
-key/value table: its first column is styled instead. Columns are sized to the Doc's 720 px text
-column. Presets cover the common user-story tables (`md2delta.py` / `delta2doc.py`); any other
-table is scaled proportionally.
+- Headings `#`, `##`, `###` (the first `# ` line names an untitled page and is not written into the body).
+- Paragraphs, `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `[links](url)`, `> quotes`.
+- Lists: `- bullet`, `1. ordered`, `- [ ]` / `- [x]` checklists, nested with two spaces.
+- Pipe tables, with `<br>` for line breaks and `\|` for a literal pipe in a cell.
+- Backslash escapes (`\_`, `\#`, …) as written by ClickUp's own markdown export, so a page read with
+  `clickup_get_document_pages` can be edited and written back.
+
+Every table gets a bold header row with green background cells. A table whose first header cell is
+`User Story Name` is a key/value table: its first column is styled instead. Lines starting with
+`Scenario <n>` in a cell are bold. Columns are sized to the Doc's 720 px text column. Presets cover the
+common user-story tables (`md2delta.py` / `delta2doc.py`); any other table is scaled proportionally.
+
+### Errors that mean "retry"
+
+Every call answers within ~50 s (Claude Desktop and Cowork give up on a call to your computer after 60 s).
+
+| Error | Meaning |
+| --- | --- |
+| `NOT_READY` | The official server is still connecting, or waits for the ClickUp sign-in in the browser. Nothing was sent. |
+| `STALE_CONNECTION` | The connection to ClickUp had stopped answering (network or VPN change); reclickup restarted it. |
+| `BUSY` | Another Doc write or sign-in is using reclickup's browser. |
+| `NOT_LOGGED_IN` / `LOGIN_PENDING` | reclickup's browser needs a ClickUp session: call `clickup_relogin` (again). |
+| `TIMEOUT` | The Doc page did not load in time; nothing was pasted. |
+
+Read-only official tools are retried once on a network blip; writes never are.
 
 ## How it works
 
 - **Proxy:** `reclickup_mcp/server.py` speaks MCP over stdio. It starts `npx -y mcp-remote@0.15.1 https://mcp.clickup.com/mcp`,
-  forwards `tools/list` and `tools/call`, and adds its own tools. Each request runs in its own
-  thread, so a slow Doc write does not block other calls.
+  forwards `tools/list`, `tools/call`, `resources/*` (the official tools' MCP Apps views, e.g. the task card of
+  `clickup_get_task`) and `prompts/*`, and adds its own tools. Each request runs in its own thread, so a slow Doc
+  write does not block other calls. Until the official server connects, the tool list comes from the last one seen
+  (or a snapshot shipped in the package). A call slower than 20 s triggers a ping; a dead connection is restarted.
 - **Browser:** `reclickup_mcp/browser.py` runs a private headless Edge on port **9335** with its own profile
   (`~/.reclickup/headless-profile`). It starts on demand and stops after 10 minutes idle
-  (`RECLICKUP_IDLE_STOP`).
+  (`RECLICKUP_IDLE_STOP`). Claude Desktop may start several copies of reclickup; they share that Edge through a
+  lock file (`~/.reclickup/browser.lock`), so one copy never closes it under another's write.
 - **Session:** the ClickUp session (`cu_jwt` cookie) is copied once into that profile:
   - **macOS:** from a running debug Edge on `:9222` if one is signed in, else decrypted from your
     real Edge profile. Keychain asks once for "Microsoft Edge Safe Storage": click Allow.
@@ -137,6 +160,8 @@ style: 840 px tables with set column widths, green header cells and bold scenari
 - **As a task:** created through the official tools.
 - **On a Doc page:** written with `clickup_doc_write`. Give it the Doc page link and the page is
   filled in directly.
+- **Edit a Doc page:** reads the page, changes what you ask (e.g. a new scenario under Acceptance
+  Criteria) and writes it back with the same formatting.
 - **Fix:** it also repairs existing tickets whose tables came out half width.
 
 **Download:** [clickup-user-story.zip](https://github.com/haonguyenstech/reclickup-mcp/releases/latest/download/clickup-user-story.zip)
@@ -145,10 +170,12 @@ style: 840 px tables with set column widths, green header cells and bold scenari
 - **Claude Code:**
 
   ```bash
-  mkdir -p ~/.claude/skills/clickup-user-story && curl -fsSL \
-    https://raw.githubusercontent.com/haonguyenstech/reclickup-mcp/master/skills/clickup-user-story/SKILL.md \
-    -o ~/.claude/skills/clickup-user-story/SKILL.md
+  curl -fsSL -o /tmp/clickup-user-story.zip \
+    https://github.com/haonguyenstech/reclickup-mcp/releases/latest/download/clickup-user-story.zip
+  rm -rf ~/.claude/skills/clickup-user-story && unzip -q /tmp/clickup-user-story.zip -d ~/.claude/skills
   ```
+
+  The skill is a folder: `SKILL.md` plus `scripts/` (the converters it runs) and `reference/`.
 
 Then ask, for example: *"make a ticket from this spec into https://app.clickup.com/…/v/dc/…/…"*.
 The skill reads the workspace from the link, or asks which list or Doc to use.
@@ -163,10 +190,23 @@ The skill reads the workspace from the link, or asks which list or Doc to use.
 | `RECLICKUP_EDGE_PROFILE` | `~/Library/Application Support/Microsoft Edge/Default` | Real Edge profile to copy the session from (macOS) |
 | `RECLICKUP_CALL_BUDGET` | `50` | Seconds a call to an official tool may take before it answers `NOT_READY` (clients drop calls after ~60 s) |
 | `RECLICKUP_LOGIN_WAIT` | `40` | Windows: seconds `clickup_relogin` waits for the sign-in before answering `LOGIN_PENDING` |
+| `RECLICKUP_SLOW_CALL` | `20` | Seconds before a slow official call triggers a connection check |
+| `RECLICKUP_SAVE_WAIT` | `4` | Seconds `clickup_doc_write` lets ClickUp save before reloading to verify |
 | `RECLICKUP_NPX` | `npx` on `PATH` | `npx` to run `mcp-remote` |
 | `RECLICKUP_UPSTREAM` | `https://mcp.clickup.com/mcp` | Upstream MCP URL |
 
-Upstream (`mcp-remote`) stderr is logged to `~/.reclickup/upstream.log`.
+Upstream (`mcp-remote`) stderr is logged to `~/.reclickup/upstream.log` (rotated at 2 MB).
+
+## Development
+
+```bash
+python -m pip install websocket-client
+python -m unittest discover -s tests -v
+```
+
+The tests need no ClickUp account: `tests/fake_upstream.py` stands in for the official server (hung, dead, wedged,
+slow, flaky, Vietnamese text). CI runs them on Linux, macOS and Windows. `skills/clickup-user-story/scripts/` holds
+copies of `md2delta.py` and `delta2doc.py`; a test fails if they drift from the package.
 
 ## Caveats
 
