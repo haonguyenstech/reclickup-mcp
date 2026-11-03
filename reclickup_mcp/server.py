@@ -514,6 +514,21 @@ def read_only(name):
     return False
 
 
+# Claude Desktop (seen in Cowork / third-party mode, 2026-11) filters out every tool of a local server that declares an
+# MCP Apps view ("Filtering out disabled tool clickup_create_task" in main.log): clickup_create_task, get_task,
+# update_task, filter_tasks, search and the timers - 11 tools. That is what made Claude say it had no tool to create
+# or update a task. List them without the view so they stay usable; RECLICKUP_MCP_APPS=1 keeps the views.
+KEEP_APPS = os.environ.get("RECLICKUP_MCP_APPS") == "1"
+UI_KEYS = ("ui", "ui/resourceUri")
+
+
+def plain(tool):
+    meta = tool.get("_meta") or {}
+    if KEEP_APPS or not any(k in meta for k in UI_KEYS): return tool
+    t = dict(tool); t["_meta"] = {k: v for k, v in meta.items() if k not in UI_KEYS}
+    return t
+
+
 # Methods that belong to the official server: its MCP Apps UIs (ui://clickup/task-card.html for
 # clickup_get_task, task-table for clickup_filter_tasks, timers...) are fetched by the client with resources/read.
 FORWARDED = {"resources", "prompts", "completion"}
@@ -544,7 +559,7 @@ def handle(msg):
         UP.ready.wait(15)
         mine = {TOOL["name"], RELOGIN_TOOL["name"]}
         official = UP.tools or UP.known
-        return {"tools": [t for t in official if t.get("name") not in mine] + [TOOL, RELOGIN_TOOL]}
+        return {"tools": [plain(t) for t in official if t.get("name") not in mine] + [TOOL, RELOGIN_TOOL]}
     if m == "tools/call":
         p = msg["params"]; a = p.get("arguments") or {}
         if p.get("name") == RELOGIN_TOOL["name"]:

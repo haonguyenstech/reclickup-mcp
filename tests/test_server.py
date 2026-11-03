@@ -68,6 +68,22 @@ class ProxyTests(unittest.TestCase):
             self.assertFalse(err); self.assertIn("proc 0", text)
         finally: s.close()
 
+    def test_mcp_apps_views_are_stripped_from_the_tool_list(self):
+        """Claude Desktop drops local tools that declare an MCP Apps view (create/get/update task...)."""
+        s = Server()
+        try:
+            time.sleep(1)
+            t = [x for x in s.call_raw("tools/list", {})["result"]["tools"] if x["name"] == "clickup_get_task"][0]
+            self.assertNotIn("ui", t.get("_meta", {})); self.assertNotIn("ui/resourceUri", t.get("_meta", {}))
+            self.assertEqual(t["annotations"], {"readOnlyHint": True})
+        finally: s.close()
+        s = Server(RECLICKUP_MCP_APPS="1")
+        try:
+            time.sleep(1)
+            t = [x for x in s.call_raw("tools/list", {})["result"]["tools"] if x["name"] == "clickup_get_task"][0]
+            self.assertIn("ui", t["_meta"])
+        finally: s.close()
+
     def test_vietnamese_round_trip(self):
         """Windows decoded pipes as cp1252: 'ờ' (E1 BB 9D) killed the reader and every later call timed out."""
         s = Server()
