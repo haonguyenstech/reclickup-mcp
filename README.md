@@ -4,6 +4,10 @@ An MCP server that gives you **every tool of the official ClickUp MCP** plus one
 **write formatted tables into a ClickUp Doc** — set column widths, green header cells, bold text —
 straight from Markdown, with nothing to copy or paste.
 
+<a href="https://pub-ad81218f6d26484ab3b7b9f714c38911.r2.dev/videos/reclickup-mcp-windows-setup.mp4"><img src=".github/assets/reclickup-mcp-windows-setup.jpg" alt="Play the Windows setup video" width="640"></a>
+
+<sub>Setup on Windows in Claude Desktop: install, sign in, add the clickup-user-story skill, write a ticket into a Doc (1:55).</sub>
+
 ## Why
 
 ClickUp's public Docs API (and the official MCP's `create/update_document_page`) only accepts Markdown
@@ -91,8 +95,9 @@ claude mcp add reclickup-mcp -- uvx --from git+https://github.com/haonguyenstech
 
 ### First run
 
-- **Official ClickUp tools:** the first start opens a browser tab for the official ClickUp MCP.
-  Sign in and approve. The token is cached in `~/.mcp-auth`. Until you approve, only reclickup's
+- **Official ClickUp tools:** after the restart, start a task and ask Claude something like
+  *"log in to ClickUp"*. That opens a browser tab for the official ClickUp MCP: pick your workspace
+  and click **Connect Workspace**. The token is cached in `~/.mcp-auth`. Until you approve, only reclickup's
   own tools are listed; the full list appears right after.
 - **`clickup_doc_write`:** needs a ClickUp session in reclickup's browser. On macOS it is copied
   automatically. On Windows, call `clickup_relogin` once and sign in in the window it opens.
