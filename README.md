@@ -1,12 +1,33 @@
+<div align="center">
+
+<img src=".github/assets/icon.png" width="112" alt="reclickup-mcp icon" />
+
 # reclickup-mcp
+
+**Every tool of the official ClickUp MCP, plus formatted tables written straight into a ClickUp Doc.**
+
+<p>
+  <a href="https://github.com/haonguyenstech/reclickup-mcp/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/haonguyenstech/reclickup-mcp?color=1E9E75&logo=github" /></a>
+  <img alt="Python ≥3.9" src="https://img.shields.io/badge/python-%E2%89%A53.9-3776AB?logo=python&logoColor=white" />
+  <img alt="uv" src="https://img.shields.io/badge/install-uvx-DE5FE9?logo=uv&logoColor=white" />
+  <img alt="Node.js" src="https://img.shields.io/badge/node-npx-339933?logo=node.js&logoColor=white" />
+  <img alt="macOS | Windows" src="https://img.shields.io/badge/macOS%20%7C%20Windows-Microsoft%20Edge-0078D7?logo=microsoftedge&logoColor=white" />
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-6E7781" /></a>
+</p>
+
+<a href="https://pub-ad81218f6d26484ab3b7b9f714c38911.r2.dev/videos/reclickup-mcp-windows-setup.mp4"><img src=".github/assets/reclickup-mcp-windows-setup.jpg" width="760" alt="Play the Windows setup video" /></a>
+
+<sub>Setup on Windows in Claude Desktop: install, sign in, add the clickup-user-story skill, write a ticket into a Doc (1:55).</sub>
+
+</div>
 
 An MCP server that gives you **every tool of the official ClickUp MCP** plus one thing it cannot do:
 **write formatted tables into a ClickUp Doc** — set column widths, green header cells, bold text —
 straight from Markdown, with nothing to copy or paste.
 
-<a href="https://pub-ad81218f6d26484ab3b7b9f714c38911.r2.dev/videos/reclickup-mcp-windows-setup.mp4"><img src=".github/assets/reclickup-mcp-windows-setup.jpg" alt="Play the Windows setup video" width="640"></a>
-
-<sub>Setup on Windows in Claude Desktop: install, sign in, add the clickup-user-story skill, write a ticket into a Doc (1:55).</sub>
+- Proxies the official server (`mcp.clickup.com`), so its tools stay current: read and write tasks, Docs, comments, lists.
+- `clickup_doc_write` fills a Doc page from Markdown in a headless Microsoft Edge: tables fitted to the Doc's 720 px column, green header cells, bold scenario titles.
+- Installs from this repo with one `uvx` line. Nothing to clone.
 
 ## Why
 
