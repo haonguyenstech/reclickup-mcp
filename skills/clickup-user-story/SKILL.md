@@ -190,7 +190,7 @@ If the user styles something by hand in ClickUp (color, width, etc.) and wants i
 
 ## Mode B — Fix an EXISTING ticket with broken tables
 
-Use when the user gives an existing ClickUp ticket (link/ID) whose tables are half width (all columns `238`), have no green header, or unbolded scenario titles. No spec file is needed: the source is the ticket's own delta, so manual edits made in ClickUp are kept. (If the link is a Doc — `/docs/` or `/v/dc/` — use Mode C instead.)
+Use when the user gives an existing ClickUp ticket (link/ID) whose tables are half width (all columns `238`), have no green header, or unbolded scenario titles. No spec file is needed: the source is the ticket's own delta, so manual edits made in ClickUp are kept. (If the link is a Doc — `/docs/` or `/v/dc/` — use Mode C, or Mode C2 to edit a page that already has content.)
 
 **Always tell the user first (one line):** the API cannot rewrite an existing description as delta, so the fix creates a **new** task and archives the old one. Comments, activity history, attachments, subtasks, relationships and time entries stay on the old task and do not move; the link/ID changes. For tickets with lots of discussion, suggest the manual alternative instead: select a cell → table toolbar → **"fit container"** (true 100% width, keeps everything).
 
@@ -416,6 +416,19 @@ if __name__ == "__main__":
    - **Otherwise (normal Cowork session — there is no browser tool):** run `python3 -I /tmp/conv/delta2doc.py /tmp/conv/delta.json --page "M-XXX-X: Title" > "<outputs>/M-XXX-X_copy_to_doc.html"` and present that file. Tell the user (short, in their language): open the file → click **Copy for ClickUp Doc** → open the Doc page (link) → click in the body → **Cmd+A, Cmd+V** to replace the page (or just Cmd+V to insert at the cursor). The button uses a `copy` event + `execCommand('copy')`, so it works when the file is opened in any browser.
 5. **Check** (fallback path only — `clickup_doc_write` already verifies) after the paste or after the user says done: `clickup_get_document_pages` for that page → the markdown must contain every section and the same number of tables as the delta, and no leftover `placeholder`. The API markdown never shows widths/colors; if the user reports a formatting problem, ask for a screenshot.
 6. Writing tables into a Doc through the markdown API is only for when the user explicitly asks for a quick unformatted version.
+
+## Mode C2 — Edit a Doc page that already has content
+
+Use when the user asks to change an existing Doc page: add a scenario under Acceptance Criteria, fix a row, add a message, etc. You CAN read the page: the official tools are part of `reclickup-mcp`. **Never say you can only write to a Doc, and never ask the user to paste the page content.** (If `clickup_get_document_pages` is not in the tool list, see the "Never tell the user you have no tool" rule above.)
+
+1. **Read it.** From the URL `app.clickup.com/<ws>/v/dc/<docId>/<pageId>` call `clickup_get_document_pages` with `workspace_id` = `<ws>`, `document_id` = `<docId>`, `page_ids` = [`<pageId>`], `content_format` = `"text/md"`. The page's markdown is in `pages[0].content` and its title in `pages[0].name`.
+2. **Restore what the export drops** (tested 2026-11-03 on a page written by `clickup_doc_write`) before editing, or the rewrite loses formatting:
+   - Prepend `# <pages[0].name>` as the first line (the title is not in `content`).
+   - In the Acceptance Criteria table, bold each scenario title again: `Scenario N: …` at the start of a cell → `**Scenario N: …**`.
+   - `<br>And …` lines inside a scenario lost their indent: write them as `<br>     And …` (5 spaces), as in Step 1.
+   - Headings come back as `# **Heading**`, `| ---|` separators and `<br>` line breaks: these are fine as they are.
+3. **Edit** only what the user asked (keep numbering consistent: a new scenario gets the next `No.`, message codes stay unique). Save the result as `<outputs>/M-XXX-X_<Title>_DRAFT.md` and show the user the changed part.
+4. **Write it back** with `clickup_doc_write`, `mode` = `"replace"`, `markdown` = the whole edited page (not just the new part: `append` only adds at the end of the page, it cannot insert under a section). Report the per-table result as in Mode C step 3.
 
 ## Step 3 — Report (in the user's language, concise)
 - Link: `[M-XXX-X: Title](https://app.clickup.com/t/<id>)` for a task, or the Doc page URL for Mode C (inline markdown link, never a bare URL).
