@@ -100,6 +100,70 @@ Read-only official tools are retried once on a network blip; writes never are.
 
 ## Install
 
+### Let an AI agent do it
+
+Paste one of these into **Claude Code** (or a Claude Desktop task with shell access) on the machine to set up.
+
+<details>
+<summary><b>Prompt 1: install reclickup-mcp for me</b></summary>
+
+```text
+Install the reclickup-mcp MCP server for Claude Desktop on this computer, following
+https://github.com/haonguyenstech/reclickup-mcp (read its README first). Talk to me in my language.
+
+1. Check the requirements: uv (uvx), Node.js (npx) and Microsoft Edge. Install what is missing
+   (uv: the official one-line installer; Node: winget on Windows, brew on macOS) and tell me what you installed.
+2. Find Claude Desktop's config. macOS: ~/Library/Application Support/Claude/claude_desktop_config.json, or
+   Claude-3p/ next to it when Desktop runs through an organization gateway. Windows: %APPDATA%\Claude\,
+   %LOCALAPPDATA%\Claude-3p\, or %LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\ for the Store app.
+   If the file has "deploymentMode": "3p", the Claude-3p one is in use. Back the file up, then add ONLY this entry
+   under "mcpServers", keeping every other key; write UTF-8 without a BOM:
+     "reclickup-mcp": { "command": "uvx",
+       "args": ["--from", "git+https://github.com/haonguyenstech/reclickup-mcp", "reclickup-mcp"] }
+   (macOS: if Desktop cannot find uvx, use the full path from `which uvx`.)
+3. Pre-fetch it: uvx --from git+https://github.com/haonguyenstech/reclickup-mcp python -c "import reclickup_mcp"
+4. Ask me to quit Claude Desktop completely (tray / menu bar icon -> Quit) and reopen it. Do not kill it yourself.
+   Then Settings -> Developer must show reclickup-mcp "Running".
+5. Tell me to start a Claude Desktop task, type "log in to ClickUp", and in the browser page that opens pick the
+   workspace and click "Connect Workspace".
+6. Download https://github.com/haonguyenstech/reclickup-mcp/releases/latest/download/clickup-user-story.zip and
+   tell me where it is: Claude Desktop -> Customize -> Skills -> + -> Upload skill.
+7. Report what you changed (config file path, backup path) and what I still have to do.
+```
+
+</details>
+
+<details>
+<summary><b>Prompt 2: check for an update and update it</b></summary>
+
+```text
+Check whether reclickup-mcp (https://github.com/haonguyenstech/reclickup-mcp) on this computer is up to date,
+and update it if not. Talk to me in my language.
+
+1. Latest version: the newest commit on master
+   (https://api.github.com/repos/haonguyenstech/reclickup-mcp/commits/master) and the latest release.
+2. Installed version: the "reclickup-mcp" entry in Claude Desktop's claude_desktop_config.json (see the README for
+   where it lives; check Claude-3p too). If it is missing, stop and offer to install it instead. If its git URL is
+   pinned to an old tag or commit, tell me before changing it.
+3. Update the cached build:
+   uvx --refresh --from git+https://github.com/haonguyenstech/reclickup-mcp python -c "import reclickup_mcp"
+4. Ask me to quit Claude Desktop completely (do not kill it yourself), then run
+   tools/enable_desktop_tools.py from the repo
+   (https://raw.githubusercontent.com/haonguyenstech/reclickup-mcp/master/tools/enable_desktop_tools.py):
+   first without arguments; if it lists disabled reclickup tools, run it again with --apply. Delete the script after.
+5. Ask me to reopen Claude Desktop and check Settings -> Developer: reclickup-mcp "Running".
+6. Skill: download the latest
+   https://github.com/haonguyenstech/reclickup-mcp/releases/latest/download/clickup-user-story.zip and tell me to
+   replace the clickup-user-story skill (Customize -> Skills: delete the old one, Upload skill). For Claude Code,
+   unzip it over ~/.claude/skills/clickup-user-story yourself.
+7. Report: old -> new version, what changed (the commit messages since the old version), what I still have to do.
+```
+
+</details>
+
+### By hand
+
+
 Nothing to clone. [`uv`](https://docs.astral.sh/uv/) fetches the server straight from this repo,
 installs its dependencies in a cached environment, and downloads Python itself if needed.
 
